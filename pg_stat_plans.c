@@ -209,7 +209,7 @@ static void entry_dealloc(void);
 static void entry_reset(void);
 static void AppendJumble(pgspJumbleState *jstate,
 			 const unsigned char *item, Size size);
-static void JumbleQuery(pgspJumbleState *jstate, Query *query);
+static void JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan);
 static void JumbleRangeTable(pgspJumbleState *jstate, List *rtable);
 static void JumbleExpr(pgspJumbleState *jstate, Node *node);
 
@@ -614,6 +614,16 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	if (queryDesc->totaltime && pgsp_enabled())
 	{
+		pgspJumbleState	jstate;
+		int planId;
+		/* Set up workspace for plan jumbling */
+		jstate.jumble = (unsigned char *) palloc(JUMBLE_SIZE);
+		jstate.jumble_len = 0;
+
+		/* Compute plan ID */
+		JumblePlan(&jstate, queryDesc->plannedstmt);
+		planId = hash_any(jstate.jumble, jstate.jumble_len);
+
 		/*
 		 * Make sure stats accumulation is done.  (Note: it's okay if several
 		 * levels of hook all do this.)
@@ -621,7 +631,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		InstrEndLoop(queryDesc->totaltime);
 
 		pgsp_store(queryDesc->sourceText,
-				   /*planId*/ 0,
+				   planId,
 				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
 				   queryDesc->estate->es_processed,
 				   &queryDesc->totaltime->bufusage);
@@ -1063,35 +1073,26 @@ AppendJumble(pgspJumbleState *jstate, const unsigned char *item, Size size)
 	AppendJumble(jstate, (const unsigned char *) (str), strlen(str) + 1)
 
 /*
- * JumbleQuery: Selectively serialize the query tree, appending significant
+ * JumblePlan: Selectively serialize the plan, appending significant
  * data to the "query jumble" while ignoring nonsignificant data.
- *
- * Rule of thumb for what to include is that we should ignore anything not
- * semantically significant (such as alias names) as well as anything that can
- * be deduced from child nodes (else we'd just be double-hashing that piece
- * of information).
  */
 static void
-JumbleQuery(pgspJumbleState *jstate, Query *query)
+JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan)
 {
-	Assert(IsA(query, Query));
+	Assert(IsA(plan, PlannedStmt));
 
-	APP_JUMB(query->commandType);
+	APP_JUMB(plan->commandType);
 	/* resultRelation is usually predictable from commandType */
-	JumbleExpr(jstate, (Node *) query->cteList);
-	JumbleRangeTable(jstate, query->rtable);
-	JumbleExpr(jstate, (Node *) query->jointree);
-	JumbleExpr(jstate, (Node *) query->targetList);
-	JumbleExpr(jstate, (Node *) query->returningList);
-	JumbleExpr(jstate, (Node *) query->groupClause);
-	JumbleExpr(jstate, query->havingQual);
-	JumbleExpr(jstate, (Node *) query->windowClause);
-	JumbleExpr(jstate, (Node *) query->distinctClause);
-	JumbleExpr(jstate, (Node *) query->sortClause);
-	JumbleExpr(jstate, query->limitOffset);
-	JumbleExpr(jstate, query->limitCount);
-	/* we ignore rowMarks */
-	JumbleExpr(jstate, query->setOperations);
+	JumbleExpr(jstate, (Node *) plan->planTree);
+	JumbleRangeTable(jstate, plan->rtable);
+	JumbleExpr(jstate, (Node *) plan->resultRelations);
+	JumbleExpr(jstate, (Node *) plan->utilityStmt);
+	JumbleExpr(jstate, (Node *) plan->intoClause);
+	JumbleExpr(jstate, (Node *) plan->subplans);
+	JumbleExpr(jstate, (Node *) plan->rewindPlanIDs);
+	JumbleExpr(jstate, (Node *) plan->rowMarks);
+	JumbleExpr(jstate, (Node *) plan->relationOids);
+	JumbleExpr(jstate, (Node *) plan->invalItems);
 }
 
 /*
@@ -1114,7 +1115,7 @@ JumbleRangeTable(pgspJumbleState *jstate, List *rtable)
 				APP_JUMB(rte->relid);
 				break;
 			case RTE_SUBQUERY:
-				JumbleQuery(jstate, rte->subquery);
+				Assert(!rte->subquery);
 				break;
 			case RTE_JOIN:
 				APP_JUMB(rte->jointype);
@@ -1278,7 +1279,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 
 				APP_JUMB(sublink->subLinkType);
 				JumbleExpr(jstate, (Node *) sublink->testexpr);
-				JumbleQuery(jstate, (Query *) sublink->subselect);
+				JumblePlan(jstate, (PlannedStmt*) sublink->subselect);
 			}
 			break;
 		case T_FieldSelect:
@@ -1479,10 +1480,26 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, from->quals);
 			}
 			break;
+		case T_IntoClause:
+			{
+				IntoClause *into = (IntoClause *) node;
+
+				JumbleExpr(jstate, (Node *) into->colNames);
+				JumbleExpr(jstate, (Node *) into->options);
+			}
+			break;
 		case T_List:
 			foreach(temp, (List *) node)
 			{
 				JumbleExpr(jstate, (Node *) lfirst(temp));
+			}
+			break;
+		case T_IntList:
+		case T_OidList:
+			foreach(temp, (List *) node)
+			{
+				int val = (int)lfirst(temp);
+				APP_JUMB(val);
 			}
 			break;
 		case T_SortGroupClause:
@@ -1513,7 +1530,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 
 				/* we store the string name because RTE_CTE RTEs need it */
 				APP_JUMB_STRING(cte->ctename);
-				JumbleQuery(jstate, (Query *) cte->ctequery);
+				JumblePlan(jstate, (PlannedStmt*) cte->ctequery);
 			}
 			break;
 		case T_SetOperationStmt:
@@ -1524,6 +1541,213 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				APP_JUMB(setop->all);
 				JumbleExpr(jstate, setop->larg);
 				JumbleExpr(jstate, setop->rarg);
+			}
+			break;
+		/* Plan nodes: */
+		case T_Result:
+			{
+				Result *res = (Result*) node;
+			}
+			break;
+		case T_ModifyTable:
+			{
+				ModifyTable *mt = (ModifyTable *) node;
+			}
+			break;
+		case T_Append:
+			{
+				Append *app = (Append *) node;
+			}
+			break;
+		case T_MergeAppend:
+			{
+				MergeAppend *ma = (MergeAppend *) node;
+			}
+			break;
+		case T_RecursiveUnion:
+			{
+				RecursiveUnion *ru = (RecursiveUnion *) node;
+			}
+			break;
+		case T_BitmapAnd:
+			{
+				BitmapAnd *ba = (BitmapAnd *) node;
+			}
+			break;
+		case T_BitmapOr:
+			{
+				BitmapOr *bo = (BitmapOr *) node;
+			}
+			break;
+		case T_Scan:
+			{
+				Scan *sc = (Scan *) node;
+			}
+			break;
+		case T_SeqScan:
+			{
+				SeqScan *sqs = (SeqScan *) node;
+			}
+			break;
+		case T_IndexScan:
+			{
+				IndexScan *is = (IndexScan *) node;
+			}
+			break;
+		case T_BitmapIndexScan:
+			{
+				BitmapIndexScan *bis = (BitmapIndexScan *) node;
+			}
+			break;
+		case T_BitmapHeapScan:
+			{
+				BitmapHeapScan *bhs = (BitmapHeapScan *) node;
+			}
+			break;
+		case T_TidScan:
+			{
+				TidScan *tsc = (TidScan *) node;
+			}
+			break;
+		case T_SubqueryScan:
+			{
+				SubqueryScan *sqs = (SubqueryScan *) node;
+			}
+			break;
+		case T_FunctionScan:
+			{
+				FunctionScan *fs = (FunctionScan *) node;
+			}
+			break;
+		case T_ValuesScan:
+			{
+				ValuesScan *vs = (ValuesScan *) node;
+			}
+			break;
+		case T_CteScan:
+			{
+				CteScan *ctesc = (CteScan *) node;
+			}
+			break;
+		case T_WorkTableScan:
+			{
+				WorkTableScan *wts = (WorkTableScan *) node;
+			}
+			break;
+		case T_ForeignScan:
+			{
+				ForeignScan *fs = (ForeignScan *) node;
+			}
+			break;
+		case T_FdwPlan:
+			{
+				/* TODO: Something. No such struct. */
+			}
+			break;
+		case T_Join:
+			{
+				Join *j = (Join *) node;
+			}
+			break;
+		case T_NestLoop:
+			{
+				NestLoop *nl = (NestLoop *) node;
+			}
+			break;
+		case T_MergeJoin:
+			{
+				MergeJoin *mj = (MergeJoin *) node;
+			}
+			break;
+		case T_HashJoin:
+			{
+				HashJoin *hj = (HashJoin *) node;
+			}
+			break;
+		case T_Material:
+			{
+				Material *ma = (Material *) node;
+			}
+			break;
+		case T_Sort:
+			{
+				Sort *so = (Sort *) node;
+			}
+			break;
+		case T_Group:
+			{
+				Group *gr = (Group *) node;
+			}
+			break;
+		case T_Agg:
+			{
+				Agg *ag = (Agg *) node;
+			}
+			break;
+		case T_WindowAgg:
+			{
+				WindowAgg *wa = (WindowAgg *) node;
+			}
+			break;
+		case T_Unique:
+			{
+				Unique *un = (Unique *) node;
+			}
+			break;
+		case T_Hash:
+			{
+				Hash *hash = (Hash *) node;
+			}
+			break;
+		case T_SetOp:
+			{
+				SetOp *so = (SetOp *) node;
+			}
+			break;
+		case T_LockRows:
+			{
+				LockRows *lr = (LockRows *) node;
+			}
+			break;
+		case T_Limit:
+			{
+				Limit *lim = (Limit *) node;
+			}
+			break;
+		/* these aren't subclasses of Plan: */
+		case T_NestLoopParam:
+			{
+				NestLoopParam *nlp = (NestLoopParam *) node;
+			}
+			break;
+		case T_PlanRowMark:
+			{
+				PlanRowMark *prm = (PlanRowMark*) node;
+			}
+			break;
+		case T_PlanInvalItem:
+			{
+				PlanInvalItem *pii = (PlanInvalItem*) node;
+			}
+			break;
+		/* Non-plan nodes that are known to appear in plannedStmts: */
+		case T_Integer:
+		case T_Float:
+		case T_String:
+		case T_BitString:
+		case T_Null:
+			{
+				Value *v = (Value *) node;
+			}
+			break;
+		case T_ColumnDef:
+			{
+				ColumnDef *cd = (ColumnDef *) node;
+			}
+			break;
+		case T_DefElem:
+			{
+				DefElem *de = (DefElem *) node;
 			}
 			break;
 		default:
