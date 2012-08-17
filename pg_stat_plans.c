@@ -211,6 +211,7 @@ static void AppendJumble(pgspJumbleState *jstate,
 			 const unsigned char *item, Size size);
 static void JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan);
 static void JumbleRangeTable(pgspJumbleState *jstate, List *rtable);
+static void JumblePlanHeader(pgspJumbleState *jstate, Plan *plan);
 static void JumbleExpr(pgspJumbleState *jstate, Node *node);
 
 /*
@@ -1150,6 +1151,19 @@ JumbleRangeTable(pgspJumbleState *jstate, List *rtable)
 }
 
 /*
+ * JumblePlanHeader: Jumble a Plan header.
+ *
+ * Ignore estimated execution costs, etc. We are only interested in fields that
+ * are essential to the plan.
+ */
+static void
+JumblePlanHeader(pgspJumbleState *jstate, Plan *plan)
+{
+	JumbleExpr(jstate, (Node *) plan->qual);
+	JumbleExpr(jstate, (Node *) plan->targetlist);
+}
+
+/*
  * Jumble a plan tree
  *
  * In general this function should handle all the same node types that
@@ -1509,7 +1523,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_OidList:
 			foreach(temp, (List *) node)
 			{
-				int val = (int)lfirst(temp);
+				Oid val = (Oid) lfirst(temp);
 				APP_JUMB(val);
 			}
 			break;
@@ -1559,6 +1573,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 			{
 				Result *res = (Result*) node;
 
+				JumblePlanHeader(jstate, &res->plan);
 				JumbleExpr(jstate, res->resconstantqual);
 			}
 			break;
@@ -1567,6 +1582,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				ModifyTable *mt = (ModifyTable *) node;
 
 				APP_JUMB(mt->resultRelIndex);
+				JumblePlanHeader(jstate, &mt->plan);
 				JumbleExpr(jstate, (Node *) mt->resultRelations);
 				JumbleExpr(jstate, (Node *) mt->returningLists);
 				JumbleExpr(jstate, (Node *) mt->rowMarks);
@@ -1575,42 +1591,61 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_Append:
 			{
 				Append *app = (Append *) node;
+
+				JumblePlanHeader(jstate, &app->plan);
 				JumbleExpr(jstate, (Node *) app->appendplans);
 			}
 			break;
 		case T_MergeAppend:
 			{
 				MergeAppend *ma = (MergeAppend *) node;
+
+				JumblePlanHeader(jstate, &ma->plan);
 			}
 			break;
 		case T_RecursiveUnion:
 			{
 				RecursiveUnion *ru = (RecursiveUnion *) node;
+
+				JumblePlanHeader(jstate, &ru->plan);
 			}
 			break;
 		case T_BitmapAnd:
 			{
 				BitmapAnd *ba = (BitmapAnd *) node;
+
+				JumblePlanHeader(jstate, &ba->plan);
 			}
 			break;
 		case T_BitmapOr:
 			{
 				BitmapOr *bo = (BitmapOr *) node;
+
+				JumblePlanHeader(jstate, &bo->plan);
 			}
 			break;
 		case T_Scan:
 			{
 				Scan *sc = (Scan *) node;
+
+				JumblePlanHeader(jstate, &sc->plan);
 			}
 			break;
 		case T_SeqScan:
 			{
 				SeqScan *sqs = (SeqScan *) node;
+
+				JumblePlanHeader(jstate, &sqs->plan);
 			}
 			break;
 		case T_IndexScan:
 			{
 				IndexScan *is = (IndexScan *) node;
+
+				JumbleExpr(jstate, (Node *) is->indexqualorig);
+				JumbleExpr(jstate, (Node *) is->indexorderby);
+				JumbleExpr(jstate, (Node *) is->indexorderbyorig);
+				JumbleExpr(jstate, (Node *) is->indexqual);
 			}
 			break;
 		case T_BitmapIndexScan:
@@ -1626,21 +1661,37 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_TidScan:
 			{
 				TidScan *tsc = (TidScan *) node;
+
+				JumbleExpr(jstate, (Node *) tsc->tidquals);
 			}
 			break;
 		case T_SubqueryScan:
 			{
 				SubqueryScan *sqs = (SubqueryScan *) node;
+
+				JumbleExpr(jstate, (Node *) sqs->subplan);
 			}
 			break;
 		case T_FunctionScan:
 			{
 				FunctionScan *fs = (FunctionScan *) node;
+
+				JumbleExpr(jstate, (Node *) fs->funcexpr);		/* expression tree for func call */
+				JumbleExpr(jstate, (Node *) fs->funccolnames);	/* output column names (string Value nodes) */
+				JumbleExpr(jstate, (Node *) fs->funccoltypes);	/* OID list of column type OIDs */
+				JumbleExpr(jstate, (Node *) fs->funccoltypmods); /* integer list of column typmods */
 			}
 			break;
 		case T_ValuesScan:
 			{
 				ValuesScan *vs = (ValuesScan *) node;
+
+				foreach(temp, vs->values_lists)
+				{
+					Node *exlist = (Node *) lfirst(temp);
+
+					JumbleExpr(jstate, (Node *) exlist);
+				}
 			}
 			break;
 		case T_CteScan:
@@ -1666,6 +1717,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_Join:
 			{
 				Join *j = (Join *) node;
+
+				JumblePlanHeader(jstate, &j->plan);
 			}
 			break;
 		case T_NestLoop:
@@ -1686,51 +1739,71 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_Material:
 			{
 				Material *ma = (Material *) node;
+
+				JumblePlanHeader(jstate, &ma->plan);
 			}
 			break;
 		case T_Sort:
 			{
 				Sort *so = (Sort *) node;
+
+				JumblePlanHeader(jstate, &so->plan);
 			}
 			break;
 		case T_Group:
 			{
 				Group *gr = (Group *) node;
+
+				JumblePlanHeader(jstate, &gr->plan);
 			}
 			break;
 		case T_Agg:
 			{
 				Agg *ag = (Agg *) node;
+
+				JumblePlanHeader(jstate, &ag->plan);
 			}
 			break;
 		case T_WindowAgg:
 			{
 				WindowAgg *wa = (WindowAgg *) node;
+
+				JumblePlanHeader(jstate, &wa->plan);
 			}
 			break;
 		case T_Unique:
 			{
 				Unique *un = (Unique *) node;
+
+				JumblePlanHeader(jstate, &un->plan);
 			}
 			break;
 		case T_Hash:
 			{
 				Hash *hash = (Hash *) node;
+
+				JumblePlanHeader(jstate, &hash->plan);
 			}
 			break;
 		case T_SetOp:
 			{
 				SetOp *so = (SetOp *) node;
+
+				JumblePlanHeader(jstate, &so->plan);
 			}
 			break;
 		case T_LockRows:
 			{
 				LockRows *lr = (LockRows *) node;
+
+				JumblePlanHeader(jstate, &lr->plan);
 			}
 			break;
 		case T_Limit:
 			{
 				Limit *lim = (Limit *) node;
+
+				JumblePlanHeader(jstate, &lim->plan);
 			}
 			break;
 		/* these aren't subclasses of Plan: */
