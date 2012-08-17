@@ -12,6 +12,7 @@ LANGUAGE C;
 CREATE FUNCTION pg_stat_plans(
     OUT userid oid,
     OUT dbid oid,
+    OUT planid oid,
     OUT query text,
     OUT calls int8,
     OUT total_time float8,

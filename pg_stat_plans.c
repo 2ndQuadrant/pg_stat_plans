@@ -775,7 +775,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 14
+#define PG_STAT_PLAN_COLS 15
 
 /*
  * Retrieve plan statistics.
@@ -838,6 +838,13 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 
 		values[i++] = ObjectIdGetDatum(entry->key.userid);
 		values[i++] = ObjectIdGetDatum(entry->key.dbid);
+
+		/*
+		 * As an expedient way of bitwise casting (to avoid a signedness
+		 * conversion), simply treat planid as an Oid. Avoid displaying negative
+		 * planids.
+		 */
+		values[i++] = ObjectIdGetDatum(entry->key.planid);
 
 		if (is_superuser || entry->key.userid == userid)
 		{
