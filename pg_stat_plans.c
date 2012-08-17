@@ -1273,6 +1273,11 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) expr->args);
 			}
 			break;
+		case T_SubPlan:
+			{
+				SubPlan *sp = (SubPlan *) node;
+			}
+			break;
 		case T_SubLink:
 			{
 				SubLink    *sublink = (SubLink *) node;
@@ -1479,7 +1484,6 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) from->fromlist);
 				JumbleExpr(jstate, from->quals);
 			}
-			break;
 		case T_IntoClause:
 			{
 				IntoClause *into = (IntoClause *) node;
@@ -1547,16 +1551,24 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_Result:
 			{
 				Result *res = (Result*) node;
+
+				JumbleExpr(jstate, res->resconstantqual);
 			}
 			break;
 		case T_ModifyTable:
 			{
 				ModifyTable *mt = (ModifyTable *) node;
+
+				APP_JUMB(mt->resultRelIndex);
+				JumbleExpr(jstate, (Node *) mt->resultRelations);
+				JumbleExpr(jstate, (Node *) mt->returningLists);
+				JumbleExpr(jstate, (Node *) mt->rowMarks);
 			}
 			break;
 		case T_Append:
 			{
 				Append *app = (Append *) node;
+				JumbleExpr(jstate, (Node *) app->appendplans);
 			}
 			break;
 		case T_MergeAppend:
