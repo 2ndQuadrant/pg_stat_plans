@@ -21,8 +21,8 @@
  * disappear!) and also take the entry's mutex spinlock.
  *
  *
- * Portions Copyright (c) 2008-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 2012, 2ndQuadrant Ltd.
+ * Portions Copyright (c) 2008-2012, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  pg_stat_plans/pg_stat_plans.c
@@ -90,16 +90,12 @@ typedef struct Counters
 	int64		rows;			/* total # of retrieved or affected rows */
 	int64		shared_blks_hit;	/* # of shared buffer hits */
 	int64		shared_blks_read;		/* # of shared disk blocks read */
-	int64		shared_blks_dirtied;	/* # of shared disk blocks dirtied */
 	int64		shared_blks_written;	/* # of shared disk blocks written */
 	int64		local_blks_hit; /* # of local buffer hits */
 	int64		local_blks_read;	/* # of local disk blocks read */
-	int64		local_blks_dirtied;		/* # of local disk blocks dirtied */
 	int64		local_blks_written;		/* # of local disk blocks written */
 	int64		temp_blks_read; /* # of temp blocks read */
 	int64		temp_blks_written;		/* # of temp blocks written */
-	double		blk_read_time;	/* time spent reading, in msec */
-	double		blk_write_time; /* time spent writing, in msec */
 	double		usage;			/* usage factor */
 } Counters;
 
@@ -128,15 +124,6 @@ typedef struct pgspSharedState
 } pgspSharedState;
 
 /*
- * Struct for tracking locations/lengths of constants during normalization
- */
-typedef struct pgspLocationLen
-{
-	int			location;		/* start offset in query text */
-	int			length;			/* length in bytes, or -1 to ignore */
-} pgspLocationLen;
-
-/*
  * Working state for computing a query jumble and producing a normalized
  * query string
  */
@@ -151,7 +138,7 @@ typedef struct pgspJumbleState
 
 /*---- Local variables ----*/
 
-/* Current nesting depth of ExecutorRun+ProcessUtility calls */
+/* Current nesting depth of ExecutorRun calls */
 static int	nested_level = 0;
 
 /* Saved hook values in case of unload */
@@ -212,11 +199,9 @@ static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
-static uint32 pgsp_hash_string(const char *str);
 static void pgsp_store(const char *query, uint32 planId,
 		   double total_time, uint64 rows,
-		   const BufferUsage *bufusage,
-		   pgspJumbleState *jstate);
+		   const BufferUsage *bufusage);
 static Size pgsp_memsize(void);
 static pgspEntry *entry_alloc(pgspHashKey *key, const char *query,
 			int query_len);
@@ -227,8 +212,6 @@ static void AppendJumble(pgspJumbleState *jstate,
 static void JumbleQuery(pgspJumbleState *jstate, Query *query);
 static void JumbleRangeTable(pgspJumbleState *jstate, List *rtable);
 static void JumbleExpr(pgspJumbleState *jstate, Node *node);
-static int	comp_location(const void *a, const void *b);
-
 
 /*
  * Module load callback
@@ -267,7 +250,7 @@ _PG_init(void)
 			   "Selects which plans are tracked by pg_stat_plans.",
 							 NULL,
 							 &pgsp_track,
-							 pgsp_track,
+							 PGSP_TRACK_TOP,
 							 track_options,
 							 PGC_SUSET,
 							 0,
@@ -436,10 +419,6 @@ pgsp_shmem_startup(void)
 		if (fread(buffer, 1, temp.query_len, file) != temp.query_len)
 			goto error;
 		buffer[temp.query_len] = '\0';
-
-		/* Skip loading "sticky" entries */
-		if (temp.counters.calls == 0)
-			continue;
 
 		/* Clip to available length if needed */
 		if (temp.query_len >= query_size)
@@ -645,8 +624,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 				   /*planId*/ 0,
 				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
 				   queryDesc->estate->es_processed,
-				   &queryDesc->totaltime->bufusage,
-				   NULL);
+				   &queryDesc->totaltime->bufusage);
 	}
 
 	if (prev_ExecutorEnd)
@@ -688,28 +666,15 @@ pgsp_match_fn(const void *key1, const void *key2, Size keysize)
 }
 
 /*
- * Given an arbitrarily long query string, produce a hash for the purposes of
- * identifying the query, without normalizing constants.  Used when hashing
- * utility plans.
- */
-static uint32
-pgsp_hash_string(const char *str)
-{
-	return hash_any((const unsigned char *) str, strlen(str));
-}
-
-/*
  * Store some statistics for a plans.
  */
 static void
 pgsp_store(const char *query, uint32 planId,
 		   double total_time, uint64 rows,
-		   const BufferUsage *bufusage,
-		   pgspJumbleState *jstate)
+		   const BufferUsage *bufusage)
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
-	char	   *norm_query = NULL;
 
 	Assert(query != NULL);
 
@@ -741,34 +706,23 @@ pgsp_store(const char *query, uint32 planId,
 
 		query_len = strlen(query);
 
-		if (jstate)
-		{
-			/* Acquire exclusive lock as required by entry_alloc() */
-			LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+		/*
+		 * We're just going to store the query string as-is; but we have
+		 * to truncate it if over-length.
+		 */
+		if (query_len >= pgsp->query_size)
+			query_len = pg_encoding_mbcliplen(key.encoding,
+											  query,
+											  query_len,
+											  pgsp->query_size - 1);
 
-			entry = entry_alloc(&key, norm_query, query_len);
-		}
-		else
-		{
-			/*
-			 * We're just going to store the query string as-is; but we have
-			 * to truncate it if over-length.
-			 */
-			if (query_len >= pgsp->query_size)
-				query_len = pg_encoding_mbcliplen(key.encoding,
-												  query,
-												  query_len,
-												  pgsp->query_size - 1);
+		/* Acquire exclusive lock as required by entry_alloc() */
+		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 
-			/* Acquire exclusive lock as required by entry_alloc() */
-			LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-
-			entry = entry_alloc(&key, query, query_len);
-		}
+		entry = entry_alloc(&key, query, query_len);
 	}
 
-	/* Increment the counts, except when jstate is not NULL */
-	if (!jstate)
+	/* Increment the counts */
 	{
 		/*
 		 * Grab the spinlock while updating the counters (see comment about
@@ -778,35 +732,23 @@ pgsp_store(const char *query, uint32 planId,
 
 		SpinLockAcquire(&e->mutex);
 
-		/* "Unstick" entry if it was previously sticky */
-		if (e->counters.calls == 0)
-			e->counters.usage = USAGE_INIT;
-
 		e->counters.calls += 1;
 		e->counters.total_time += total_time;
 		e->counters.rows += rows;
 		e->counters.shared_blks_hit += bufusage->shared_blks_hit;
 		e->counters.shared_blks_read += bufusage->shared_blks_read;
-		e->counters.shared_blks_dirtied += bufusage->shared_blks_dirtied;
 		e->counters.shared_blks_written += bufusage->shared_blks_written;
 		e->counters.local_blks_hit += bufusage->local_blks_hit;
 		e->counters.local_blks_read += bufusage->local_blks_read;
-		e->counters.local_blks_dirtied += bufusage->local_blks_dirtied;
 		e->counters.local_blks_written += bufusage->local_blks_written;
 		e->counters.temp_blks_read += bufusage->temp_blks_read;
 		e->counters.temp_blks_written += bufusage->temp_blks_written;
-		e->counters.blk_read_time += INSTR_TIME_GET_MILLISEC(bufusage->blk_read_time);
-		e->counters.blk_write_time += INSTR_TIME_GET_MILLISEC(bufusage->blk_write_time);
 		e->counters.usage += USAGE_EXEC(total_time);
 
 		SpinLockRelease(&e->mutex);
 	}
 
 	LWLockRelease(pgsp->lock);
-
-	/* We postpone this pfree until we're out of the lock */
-	if (norm_query)
-		pfree(norm_query);
 }
 
 /*
@@ -823,7 +765,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 18
+#define PG_STAT_PLAN_COLS 14
 
 /*
  * Retrieve plan statistics.
@@ -917,16 +859,12 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		values[i++] = Int64GetDatumFast(tmp.rows);
 		values[i++] = Int64GetDatumFast(tmp.shared_blks_hit);
 		values[i++] = Int64GetDatumFast(tmp.shared_blks_read);
-		values[i++] = Int64GetDatumFast(tmp.shared_blks_dirtied);
 		values[i++] = Int64GetDatumFast(tmp.shared_blks_written);
 		values[i++] = Int64GetDatumFast(tmp.local_blks_hit);
 		values[i++] = Int64GetDatumFast(tmp.local_blks_read);
-		values[i++] = Int64GetDatumFast(tmp.local_blks_dirtied);
 		values[i++] = Int64GetDatumFast(tmp.local_blks_written);
 		values[i++] = Int64GetDatumFast(tmp.temp_blks_read);
 		values[i++] = Int64GetDatumFast(tmp.temp_blks_written);
-		values[i++] = Float8GetDatumFast(tmp.blk_read_time);
-		values[i++] = Float8GetDatumFast(tmp.blk_write_time);
 
 		Assert(i == PG_STAT_PLAN_COLS);
 
@@ -1137,7 +1075,6 @@ static void
 JumbleQuery(pgspJumbleState *jstate, Query *query)
 {
 	Assert(IsA(query, Query));
-	Assert(query->utilityStmt == NULL);
 
 	APP_JUMB(query->commandType);
 	/* resultRelation is usually predictable from commandType */
@@ -1205,7 +1142,7 @@ JumbleRangeTable(pgspJumbleState *jstate, List *rtable)
 }
 
 /*
- * Jumble an expression tree
+ * Jumble a plan tree
  *
  * In general this function should handle all the same node types that
  * expression_tree_walker() does, and therefore it's coded to be as parallel
@@ -1595,21 +1532,4 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				 (int) nodeTag(node));
 			break;
 	}
-}
-
-/*
- * comp_location: comparator for qsorting pgspLocationLen structs by location
- */
-static int
-comp_location(const void *a, const void *b)
-{
-	int			l = ((const pgspLocationLen *) a)->location;
-	int			r = ((const pgspLocationLen *) b)->location;
-
-	if (l < r)
-		return -1;
-	else if (l > r)
-		return +1;
-	else
-		return 0;
 }
