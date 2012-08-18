@@ -210,8 +210,10 @@ static void entry_reset(void);
 static void AppendJumble(pgspJumbleState *jstate,
 			 const unsigned char *item, Size size);
 static void JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan);
+static void JumblePlanState(pgspJumbleState *jstate, PlanState *pstate);
 static void JumbleRangeTable(pgspJumbleState *jstate, List *rtable);
 static void JumblePlanHeader(pgspJumbleState *jstate, Plan *plan);
+static void JumbleScanHeader(pgspJumbleState *jstate, Scan *scan);
 static void JumbleExpr(pgspJumbleState *jstate, Node *node);
 
 /*
@@ -623,6 +625,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 
 		/* Compute plan ID */
 		JumblePlan(&jstate, queryDesc->plannedstmt);
+		JumblePlanState(&jstate, queryDesc->planstate);
 		planId = hash_any(jstate.jumble, jstate.jumble_len);
 
 		/*
@@ -1104,6 +1107,202 @@ JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan)
 }
 
 /*
+ * JumblePlanState: Jumble the corresponding state of a plan.
+ */
+static void
+JumblePlanState(pgspJumbleState *jstate, PlanState *pstate)
+{
+	ListCell   *lc;
+
+	/* Hash generic PlanState header items */
+	JumbleExpr(jstate, (Node *) pstate->targetlist);
+	JumbleExpr(jstate, (Node *) pstate->qual);
+	APP_JUMB(nodeTag(pstate));
+#if 0
+	lefttree; /* input plan tree(s) */
+	righttree;
+	initPlan;		/* Init SubPlanState nodes (un-correlated expr
+						 * subselects) */
+#endif
+	switch(nodeTag(pstate))
+	{
+		case T_ResultState:
+			{
+				ResultState *rs = (ResultState *) pstate;
+			}
+			break;
+		case T_ModifyTableState:
+			{
+				ModifyTableState *mt = (ModifyTableState *) pstate;
+			}
+			break;
+		case T_AppendState:
+			{
+				AppendState *mt = (AppendState *) pstate;
+			}
+			break;
+		case T_MergeAppendState:
+			{
+				MergeAppendState *mt = (MergeAppendState *) pstate;
+			}
+			break;
+		case T_RecursiveUnionState:
+			{
+				RecursiveUnionState *mt = (RecursiveUnionState *) pstate;
+			}
+			break;
+		case T_BitmapAndState:
+			{
+				BitmapAndState *mt = (BitmapAndState *) pstate;
+			}
+			break;
+		case T_BitmapOrState:
+			{
+				BitmapOrState *mt = (BitmapOrState *) pstate;
+			}
+			break;
+		case T_ScanState:
+			{
+				ScanState *mt = (ScanState *) pstate;
+			}
+			break;
+		case T_SeqScanState:
+			{
+				SeqScanState *mt = (SeqScanState *) pstate;
+			}
+			break;
+		case T_IndexScanState:
+			{
+				IndexScanState *mt = (IndexScanState *) pstate;
+			}
+			break;
+		case T_BitmapIndexScanState:
+			{
+				BitmapIndexScanState *mt = (BitmapIndexScanState *) pstate;
+			}
+			break;
+		case T_BitmapHeapScanState:
+			{
+				BitmapHeapScanState *mt = (BitmapHeapScanState *) pstate;
+			}
+			break;
+		case T_TidScanState:
+			{
+				TidScanState *mt = (TidScanState *) pstate;
+			}
+			break;
+		case T_SubqueryScanState:
+			{
+				SubqueryScanState *mt = (SubqueryScanState *) pstate;
+			}
+			break;
+		case T_FunctionScanState:
+			{
+				FunctionScanState *mt = (FunctionScanState *) pstate;
+			}
+			break;
+		case T_ValuesScanState:
+			{
+				ValuesScanState *mt = (ValuesScanState *) pstate;
+			}
+			break;
+		case T_CteScanState:
+			{
+				CteScanState *mt = (CteScanState *) pstate;
+			}
+			break;
+		case T_WorkTableScanState:
+			{
+				WorkTableScanState *mt = (WorkTableScanState *) pstate;
+			}
+			break;
+		case T_ForeignScanState:
+			{
+				ForeignScanState *mt = (ForeignScanState *) pstate;
+			}
+			break;
+		case T_JoinState:
+			{
+				JoinState *mt = (JoinState *) pstate;
+			}
+			break;
+		case T_NestLoopState:
+			{
+				NestLoopState *mt = (NestLoopState *) pstate;
+			}
+			break;
+		case T_MergeJoinState:
+			{
+				MergeJoinState *mt = (MergeJoinState *) pstate;
+			}
+			break;
+		case T_HashJoinState:
+			{
+				HashJoinState *mt = (HashJoinState *) pstate;
+			}
+			break;
+		case T_MaterialState:
+			{
+				MaterialState *mt = (MaterialState *) pstate;
+			}
+			break;
+		case T_SortState:
+			{
+				SortState *mt = (SortState *) pstate;
+			}
+			break;
+		case T_GroupState:
+			{
+				GroupState *mt = (GroupState *) pstate;
+			}
+			break;
+		case T_AggState:
+			{
+				AggState *mt = (AggState *) pstate;
+			}
+			break;
+		case T_WindowAggState:
+			{
+				WindowAggState *mt = (WindowAggState *) pstate;
+			}
+			break;
+		case T_UniqueState:
+			{
+				UniqueState *mt = (UniqueState *) pstate;
+			}
+			break;
+		case T_HashState:
+			{
+				HashState *mt = (HashState *) pstate;
+			}
+			break;
+		case T_SetOpState:
+			{
+				SetOpState *mt = (SetOpState *) pstate;
+			}
+			break;
+		case T_LockRowsState:
+			{
+				LockRowsState *mt = (LockRowsState *) pstate;
+			}
+			break;
+		case T_LimitState:
+			{
+				LimitState *mt = (LimitState *) pstate;
+			}
+			break;
+		default:
+			elog(WARNING, "unrecognized PlanState node: %d", (int) nodeTag(pstate));
+			break;
+	}
+	foreach(lc, pstate->subPlan)
+	{
+		PlanState* state = lfirst(lc);
+		JumblePlanState(jstate, state);
+	}
+}
+
+/*
  * Jumble a range table
  */
 static void
@@ -1161,6 +1360,16 @@ JumblePlanHeader(pgspJumbleState *jstate, Plan *plan)
 {
 	JumbleExpr(jstate, (Node *) plan->qual);
 	JumbleExpr(jstate, (Node *) plan->targetlist);
+}
+
+/*
+ * JumbleScan: Jumble the contents of a scan header.
+ */
+static void
+JumbleScanHeader(pgspJumbleState *jstate, Scan *scan)
+{
+	JumblePlanHeader(jstate, &scan->plan);
+	APP_JUMB(scan->scanrelid);
 }
 
 /*
@@ -1305,7 +1514,6 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 
 				APP_JUMB(sublink->subLinkType);
 				JumbleExpr(jstate, (Node *) sublink->testexpr);
-				JumblePlan(jstate, (PlannedStmt*) sublink->subselect);
 			}
 			break;
 		case T_FieldSelect:
@@ -1642,6 +1850,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 			{
 				IndexScan *is = (IndexScan *) node;
 
+				JumbleScanHeader(jstate, &is->scan);
+
 				JumbleExpr(jstate, (Node *) is->indexqualorig);
 				JumbleExpr(jstate, (Node *) is->indexorderby);
 				JumbleExpr(jstate, (Node *) is->indexorderbyorig);
@@ -1651,24 +1861,31 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_BitmapIndexScan:
 			{
 				BitmapIndexScan *bis = (BitmapIndexScan *) node;
+
+				JumbleScanHeader(jstate, &bis->scan);
 			}
 			break;
 		case T_BitmapHeapScan:
 			{
 				BitmapHeapScan *bhs = (BitmapHeapScan *) node;
+
+				JumbleScanHeader(jstate, &bhs->scan);
 			}
 			break;
 		case T_TidScan:
 			{
 				TidScan *tsc = (TidScan *) node;
 
+				JumbleScanHeader(jstate, &tsc->scan);
 				JumbleExpr(jstate, (Node *) tsc->tidquals);
+
 			}
 			break;
 		case T_SubqueryScan:
 			{
 				SubqueryScan *sqs = (SubqueryScan *) node;
 
+				JumbleScanHeader(jstate, &sqs->scan);
 				JumbleExpr(jstate, (Node *) sqs->subplan);
 			}
 			break;
@@ -1676,6 +1893,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 			{
 				FunctionScan *fs = (FunctionScan *) node;
 
+				JumbleScanHeader(jstate, &fs->scan);
 				JumbleExpr(jstate, (Node *) fs->funcexpr);		/* expression tree for func call */
 				JumbleExpr(jstate, (Node *) fs->funccolnames);	/* output column names (string Value nodes) */
 				JumbleExpr(jstate, (Node *) fs->funccoltypes);	/* OID list of column type OIDs */
@@ -1685,6 +1903,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_ValuesScan:
 			{
 				ValuesScan *vs = (ValuesScan *) node;
+
+				JumbleScanHeader(jstate, &vs->scan);
 
 				foreach(temp, vs->values_lists)
 				{
@@ -1697,16 +1917,22 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_CteScan:
 			{
 				CteScan *ctesc = (CteScan *) node;
+
+				JumbleScanHeader(jstate, &ctesc->scan);
 			}
 			break;
 		case T_WorkTableScan:
 			{
 				WorkTableScan *wts = (WorkTableScan *) node;
+
+				JumbleScanHeader(jstate, &wts->scan);
 			}
 			break;
 		case T_ForeignScan:
 			{
 				ForeignScan *fs = (ForeignScan *) node;
+
+				JumbleScanHeader(jstate, &fs->scan);
 			}
 			break;
 		case T_FdwPlan:

@@ -20,14 +20,16 @@ import psycopg2
 import sys
 
 test_no = 1
+failures = 0
 
 
 def do_post_mortem(conn):
-    print "Post-mortem:"
+    sys.stderr.write("Post-mortem:\n")
     cur = conn.cursor()
-    cur.execute("select * from pg_stat_plans;")
+    cur.execute("select query, calls from pg_stat_plans;")
     for i in cur:
-        sys.stderr.write(str(i))
+        for j in i:
+            sys.stderr.write(str(j) + " \n")
 
     print "\n"
 
@@ -46,6 +48,7 @@ def verify_statement_equivalency(sql, equiv, conn, test_name=None, cleanup_sql=N
     """
 
     global test_no
+    global failures
     cur = conn.cursor()
     cur.execute("select pg_stat_plans_reset();")
     cur.execute(sql)
@@ -76,8 +79,9 @@ def verify_statement_equivalency(sql, equiv, conn, test_name=None, cleanup_sql=N
     if tuple_n != 1:
         do_post_mortem(conn)
         sys.stderr.write("""The SQL statements \n'{0}'\n and \n'{1}'\n do not
-                appear to be equivalent!  Test {2} failed.""".format(sql,
+                appear to be equivalent!  Test {2} failed.\n""".format(sql,
                 equiv, test_no if test_name is None else "'{0}'({1})".format(test_name, test_no)))
+        failures += 1
 
     print """The statements \n'{0}'\n and \n'{1}'\n are equivalent, as
     expected.  Test {2} passed.\n\n""".format(sql, equiv, test_no if test_name
@@ -92,6 +96,7 @@ def verify_statement_differs(sql, diff, conn, test_name=None, cleanup_sql=None):
     """
 
     global test_no
+    global failures
     cur = conn.cursor()
     cur.execute("select pg_stat_plans_reset();")
     cur.execute(sql)
@@ -120,8 +125,9 @@ def verify_statement_differs(sql, diff, conn, test_name=None, cleanup_sql=None):
     if tuple_n != 2:
         do_post_mortem(conn)
         sys.stderr.write("""The SQL statements \n'{0}'\n and \n'{1}'\n do not
-                appear to be different!  Test {2} failed.""".format(sql, diff,
+                appear to be different!  Test {2} failed.\n""".format(sql, diff,
                 test_no if test_name is None else "'{0}'({1})".format(test_name, test_no)))
+        failures += 1
 
     print """The statements \n'{0}'\n and \n'{1}'\n are not equivalent, as expected.
         Test {2} passed.\n\n """.format(sql, diff, test_no if test_name is None else "'{0}' ({1})".format(test_name, test_no))
@@ -130,9 +136,11 @@ def verify_statement_differs(sql, diff, conn, test_name=None, cleanup_sql=None):
 
 def test_assert(assertion, conn):
     global test_no
+    global failures
     if not assertion:
         do_post_mortem(conn)
-        raise SystemExit("Assertion (test {0}) failed!".format(test_no))
+        raise SystemExit("Assertion (test {0}) failed!\n".format(test_no))
+        failures += 1
 
     print """Assertion is true.\n\nTest {0} passed.\n\n """.format(test_no)
     test_no += 1
@@ -198,13 +206,6 @@ def main():
     # don't mistake the same column number (MyVar->varno) from different tables:
     verify_statement_differs("select a.orderid    from orders a join orderlines b on a.orderid = b.orderlineid",
                 "select b.orderlineid from orders a join orderlines b on a.orderid = b.orderlineid", conn)
-
-    # Note that these queries are considered equivalent, though you could argue that they shouldn't be.
-    # This is because they have the same range table entry. I could look at aliases and differentiate
-    # them that way, but I'm reasonably convinced that to do so would be a mistake. This is a feature,
-    # not a bug.
-    verify_statement_equivalency("select a.orderid from orders a join orders b on a.orderid = b.orderid",
-                "select b.orderid from orders a join orders b on a.orderid = b.orderid", conn)
 
     # Boolean Test node:
     verify_statement_differs(
@@ -1251,6 +1252,9 @@ def main():
     '%else foo%';""")
     for i in cur:
         test_assert(i[0] == 6, conn)
+
+    global failures
+    sys.stderr.write("Failures: {0} out of {1} tests.\n".format(failures, test_no - 1))
 
 if __name__ == "__main__":
     main()
