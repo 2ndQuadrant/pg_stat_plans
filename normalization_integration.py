@@ -14,6 +14,10 @@ http://pgfoundry.org/forum/forum.php?forum_id=603
 
 Note that these tests are only for normalization. We make no effort to vary
 plans between calls here.
+
+Since we are testing the hashing of plans, it is necessary to run the tests
+with a stock postgresql.conf. You should also run ANALYZE manually after
+restoring the dellstore database.
 """
 
 import psycopg2
@@ -247,38 +251,6 @@ def main():
     verify_statement_differs("select * from orderlines ol inner join orders o on o.orderid = ol.orderid;",
                     "select * from orderlines ol left outer join orders o on o.orderid = ol.orderid;", conn)
 
-    # ExprNodes can be processed recursively:
-    verify_statement_differs(
-    "select upper(lower(upper(lower  (initcap(lower('Foo'))))));",
-    "select upper(lower(upper(initcap(initcap(lower('Foo'))))));",
-                conn)
-
-    verify_statement_equivalency(
-    "select upper(lower(upper(lower(initcap(lower('Foo'))))));",
-    "select upper(lower(upper(lower(initcap(lower('Bar'))))));",
-                conn)
-    # Do same again, but put function in FROM
-    verify_statement_differs(
-    "select * from upper(lower(upper(lower  (initcap(lower('Foo'))))));",
-    "select * from upper(lower(upper(initcap(initcap(lower('Foo'))))));",
-                conn)
-
-    verify_statement_equivalency(
-    "select * from upper(lower(upper(lower(initcap(lower('Foo'))))));",
-    "select * from upper(lower(upper(lower(initcap(lower('Bar'))))));",
-                conn)
-
-    # In the where clause too:
-    verify_statement_equivalency(
-    "select 1 from orders where 'foo' = upper(lower(upper(lower(initcap(lower('Foo'))))));",
-    "select 1 from orders where 'foo' = upper(lower(upper(lower(initcap(lower('FOOFofofo'))))));",
-                conn)
-
-    verify_statement_differs(
-    "select 1 from orders where 'foo' = upper(lower(upper(initcap(initcap(lower('Foo'))))));",
-    "select 1 from orders where 'foo' = upper(lower(upper(lower(initcap(lower('FOOFofofo'))))));",
-                conn)
-
     verify_statement_equivalency(
     "select 1 from orders where 1=55 and 'foo' = 'fi' or 'foo' = upper(lower(upper(initcap(initcap(lower('Foo'))))));",
     "select 1 from orders where 1=2 and 'feew' = 'fi' or 'bar' = upper(lower(upper(initcap(initcap(lower('Foo'))))));",
@@ -336,29 +308,17 @@ def main():
                 conn)
 
     verify_statement_differs(
-    "select ARRAY[1,2,3]::integer[] && ARRAY[1]::integer[];",
-    "select ARRAY[1,2,3]::integer[] <@ ARRAY[1]::integer[];",
+    "select ARRAY[1,2,3]::integer[] && array_agg(orderid) from orders;",
+    "select ARRAY[1,2,3]::integer[] <@ array_agg(orderid) from orders;",
                 conn)
-    # Number of elements in ARRAY[] expression is a differentiator:
-    verify_statement_differs(
-    "select ARRAY[1,2,3]::integer[] <@ ARRAY[1]::integer[];",
-    "select ARRAY[999]::integer[]   <@ ARRAY[342, 543, 634 ,753]::integer[];",
-                conn)
-
-    # Array coercion
-    verify_statement_equivalency(
-    "select '{1,2,3}'::oid[]::integer[] from orders;",
-    "select '{4,5,6}'::oid[]::integer[] from orders;",
-                conn)
-
     # array subscripting operations
     verify_statement_equivalency(
-    "select (array_agg(lower(upper(lower(initcap(lower('Baz')))))))[5:5] from orders;",
-    "select (array_agg(lower(upper(lower(initcap(lower('Bar')))))))[6:6] from orders;",
+    "select (array_agg(lower(upper(lower(initcap(lower(orderid::text)))))))[5:5] from orders;",
+    "select (array_agg(lower(upper(lower(initcap(lower(orderid::text)))))))[6:6] from orders;",
                 conn)
     verify_statement_differs(
-    "select (array_agg(lower(upper(lower(initcap(lower('Baz')))))))[5:5] from orders;",
-    "select (array_agg(lower(upper(lower(initcap(lower('Bar')))))))[6] from orders;",
+    "select (array_agg(lower(upper(lower(initcap(lower(orderid::text)))))))[5:5] from orders;",
+    "select (array_agg(lower(upper(lower(initcap(lower(orderid::text)))))))[6] from orders;",
                 conn)
 
     cur = conn.cursor()
@@ -373,12 +333,6 @@ def main():
     verify_statement_equivalency(
     "select *, (select customerid from orders limit 1), nullif(5,10) from orderlines ol join orders o on o.orderid = ol.orderid;",
     "select *, (select customerid from orders limit 1), nullif(10,15) from orderlines ol join orders o on o.orderid = ol.orderid;",
-    conn)
-
-    # Row constructor
-    verify_statement_differs(
-    "select row(1, 2,'this is a test');",
-    "select row(1, 2.5,'this is a test');",
     conn)
 
     # XML Stuff
