@@ -6,7 +6,7 @@
 -- Originally from http://blog.ioguix.net/
 CREATE OR REPLACE FUNCTION normalize_query(IN TEXT, OUT TEXT) AS $body$
   SELECT
-    regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+	regexp_replace(regexp_replace(regexp_replace(regexp_replace(
     regexp_replace(regexp_replace(regexp_replace(regexp_replace(
 
     $1,
@@ -16,8 +16,8 @@ CREATE OR REPLACE FUNCTION normalize_query(IN TEXT, OUT TEXT) AS $body$
 
     -- Remove string content
     $$\\'$$,                        '',            'g'   ),
-    $$'[^']*'$$,                    $$''$$,        'g'   ),
-    $$''('')+$$,                    $$''$$,        'g'   ),
+    $$'[^']*'$$,                    $$?$$,        'g'   ),
+    $$''('')+$$,                    $$?$$,        'g'   ),
 
     -- Remove NULL parameters
     '=\s*NULL',                     '=?',          'g'   ),
@@ -61,30 +61,42 @@ RETURNS SETOF record
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
+CREATE FUNCTION pg_stat_plans_explain(planid oid)
+RETURNS TEXT
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
 -- Register a view on the function for ease of use.
 CREATE VIEW pg_stat_plans AS
   SELECT * FROM pg_stat_plans();
 
 CREATE VIEW pg_stat_plan_queries AS
   SELECT
-    userid,
-    dbid,
-    array_agg(planid) AS plan_ids,
-    normalize_query(query),
-    sum(calls) AS calls,
-    sum(total_time) AS total_time,
-    sum(rows) AS rows,
-    sum(shared_blks_hit) AS shared_blks_hit,
-    sum(shared_blks_read) AS shared_blks_read,
-    sum(shared_blks_written) AS shared_blks_written,
-    sum(local_blks_hit) AS local_blks_hit,
-    sum(local_blks_read) AS local_blks_read,
-    sum(local_blks_written) AS local_blks_written,
-    sum(temp_blks_read) AS temp_blks_read,
-    sum(temp_blks_written) AS temp_blks_written
+	userid,
+	dbid,
+	-- XXX: The order of array_agg output is undefined. However, in practice it
+	-- is safe to assume that the order will be consistent across array_agg calls
+	-- in this query, so that plan_ids will correspond to calls_histogram.
+	array_agg(planid) AS plan_ids,
+	array_agg(calls) AS calls_histogram,
+	array_agg(total_time / calls) AS avg_time_histogram,
+	normalize_query(query),
+	sum(calls) AS calls,
+	sum(total_time) AS total_time,
+	variance(total_time / calls) AS time_variance,
+	stddev_samp(total_time/ calls) AS time_stddev,
+	sum(rows) AS rows,
+	sum(shared_blks_hit) AS shared_blks_hit,
+	sum(shared_blks_read) AS shared_blks_read,
+	sum(shared_blks_written) AS shared_blks_written,
+	sum(local_blks_hit) AS local_blks_hit,
+	sum(local_blks_read) AS local_blks_read,
+	sum(local_blks_written) AS local_blks_written,
+	sum(temp_blks_read) AS temp_blks_read,
+	sum(temp_blks_written) AS temp_blks_written
   FROM pg_stat_plans()
 	GROUP BY
-	1, 2, 4;
+	1, 2, 6;
 
 GRANT SELECT ON pg_stat_plans TO PUBLIC;
 
