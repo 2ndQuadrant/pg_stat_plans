@@ -85,6 +85,7 @@ typedef struct pgspHashKey
  */
 typedef struct Counters
 {
+	bool		query_valid;	/* was the query string invalidated? */
 	int64		calls;			/* # of times executed */
 	double		total_time;		/* total execution time, in msec */
 	int64		rows;			/* total # of retrieved or affected rows */
@@ -695,7 +696,6 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		MemoryContext mct = MemoryContextSwitchTo(TopMemoryContext);
 
 		explain_text = pgsp_explain(queryDesc);
-
 		pgsp_planid = planId;
 
 		MemoryContextSwitchTo(mct);
@@ -751,6 +751,9 @@ pgsp_store(const char *query, Oid planId,
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
+	int			query_len;
+	bool		invalidated = false;
+
 
 	Assert(query != NULL);
 
@@ -772,8 +775,6 @@ pgsp_store(const char *query, Oid planId,
 	/* Create new entry, if not present */
 	if (!entry)
 	{
-		int			query_len;
-
 		/*
 		 * We'll need exclusive lock to make a new entry.  There is no point
 		 * in holding shared lock while we normalize the string, though.
@@ -808,6 +809,9 @@ pgsp_store(const char *query, Oid planId,
 
 		SpinLockAcquire(&e->mutex);
 
+		if (!e->counters.query_valid)
+			invalidated = true;
+
 		e->counters.calls += 1;
 		e->counters.total_time += total_time;
 		e->counters.rows += rows;
@@ -822,6 +826,48 @@ pgsp_store(const char *query, Oid planId,
 		e->counters.usage += USAGE_EXEC(total_time);
 
 		SpinLockRelease(&e->mutex);
+	}
+
+	if (invalidated)
+	{
+		/*
+		 * Entry was previously found to have a query string that no longer
+		 * produces this plan. This may be due to adjustments in planner cost
+		 * constants, changing statistical distributions, and many other things.
+		 *
+		 * Update the entry's query string so that its query string is
+		 * representative. We don't just do this all the time because it entails
+		 * taking an exclusive lock.
+		 */
+		LWLockRelease(pgsp->lock);
+		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+
+		entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
+		if (entry)
+		{
+			query_len = strlen(query);
+
+			/*
+			 * As above, we have to truncate it if over-length.
+			 */
+			if (query_len >= pgsp->query_size)
+				query_len = pg_encoding_mbcliplen(key.encoding,
+												  query,
+												  query_len,
+												  pgsp->query_size - 1);
+
+			memcpy(entry->query, query, query_len);
+			entry->query[query_len] = '\0';
+			entry->counters.query_valid = true;
+		}
+
+		LWLockRelease(pgsp->lock);
+		if (entry)
+			elog(NOTICE, "updated pg_stat_plans query string of entry %u",
+					key.planid);
+
+		return;
 	}
 
 	LWLockRelease(pgsp->lock);
@@ -841,7 +887,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 15
+#define PG_STAT_PLAN_COLS 16
 
 /*
  * Retrieve plan statistics.
@@ -931,6 +977,7 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 			SpinLockRelease(&e->mutex);
 		}
 
+		values[i++] = BoolGetDatum(entry->counters.query_valid);
 		values[i++] = Int64GetDatumFast(tmp.calls);
 		values[i++] = Float8GetDatumFast(tmp.total_time);
 		values[i++] = Int64GetDatumFast(tmp.rows);
@@ -1003,7 +1050,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
-		/* We rely on the assumption that this is NULL-terminated for us: */
+		/* We rely on the assumption that this gets NULL-terminated: */
 		appendBinaryStringInfo(&query, entry->query, entry->query_len);
 		LWLockRelease(pgsp->lock);
 
@@ -1055,6 +1102,19 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				SET_VARSIZE(result, err.len + len + VARHDRSZ);
 				memcpy(VARDATA(result), err.data, err.len);
 				memcpy(VARDATA(result) + err.len, explain_text, len);
+				/* Update hashtable to invalidate query string */
+				LWLockAcquire(pgsp->lock, LW_SHARED);
+				/* Invalidate query iff necessary */
+				if (entry->counters.query_valid)
+				{
+					volatile pgspEntry *e = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
+					SpinLockAcquire(&e->mutex);
+					e->counters.query_valid = false;
+					SpinLockRelease(&e->mutex);
+				}
+
+				LWLockRelease(pgsp->lock);
 			}
 			else
 			{
@@ -1070,7 +1130,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		{
 			/* This is really just defensive */
 			const char *e = "<unavailable>";
-			Size len			  = strlen(e);
+			Size len	  = strlen(e);
 			result = palloc(len + VARHDRSZ);
 			SET_VARSIZE(result, len + VARHDRSZ);
 			memcpy(VARDATA(result), e, len);
@@ -1169,6 +1229,7 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 	{
 		/* New entry, initialize it */
 
+		entry->counters.query_valid = true;
 		/* reset the statistics */
 		memset(&entry->counters, 0, sizeof(Counters));
 		/* set the appropriate initial usage count */
