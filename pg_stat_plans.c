@@ -35,18 +35,18 @@
 
 #include "access/hash.h"
 #include "executor/instrument.h"
+#include "commands/explain.h"
+#include "executor/spi.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#include "parser/analyze.h"
-#include "parser/parsetree.h"
-#include "parser/scanner.h"
 #include "pgstat.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/spin.h"
 #include "tcop/utility.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 
 
 PG_MODULE_MAGIC;
@@ -140,6 +140,8 @@ typedef struct pgspJumbleState
 
 /* Current nesting depth of ExecutorRun calls */
 static int	nested_level = 0;
+/* Current query's explain text */
+static char *explain_text = NULL;
 
 /* Saved hook values in case of unload */
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -169,11 +171,21 @@ static const struct config_enum_entry track_options[] =
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry format_options[] = {
+	{"text", EXPLAIN_FORMAT_TEXT, false},
+	{"xml", EXPLAIN_FORMAT_XML, false},
+	{"json", EXPLAIN_FORMAT_JSON, false},
+	{"yaml", EXPLAIN_FORMAT_YAML, false},
+	{NULL, 0, false}
+};
+
 static int	pgsp_max;			/* max # plans to track */
 static int	pgsp_track;			/* tracking level */
 static bool pgsp_save;			/* whether to save stats across shutdown */
 static bool pgsp_planid_notice;	/* whether to give planid NOTICE */
-
+static int	pgsp_explain_format = EXPLAIN_FORMAT_TEXT;
+static bool pgsp_explaining = false; /* whether currently explaining query */
+static Oid	pgsp_planid = -1;	/* last planid explained for backend */
 
 #define pgsp_enabled() \
 	(pgsp_track == PGSP_TRACK_ALL || \
@@ -186,7 +198,7 @@ void		_PG_fini(void);
 
 Datum		pg_stat_plans_reset(PG_FUNCTION_ARGS);
 Datum		pg_stat_plans(PG_FUNCTION_ARGS);
-Datum		pg_stat_plan_explain(PG_FUNCTION_ARGS);
+text		*pg_stat_plan_explain(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_stat_plans_reset);
 PG_FUNCTION_INFO_V1(pg_stat_plans);
@@ -205,6 +217,7 @@ static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
 		   double total_time, uint64 rows,
 		   const BufferUsage *bufusage);
+static char *pgsp_explain(QueryDesc *queryDesc);
 static Size pgsp_memsize(void);
 static pgspEntry *entry_alloc(pgspHashKey *key, const char *query,
 			int query_len);
@@ -281,6 +294,18 @@ _PG_init(void)
 							 &pgsp_planid_notice,
 							 false,
 							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomEnumVariable("pg_stat_plans.log_format",
+							 "EXPLAIN format to be used for pg_stat_plans_explain().",
+							 NULL,
+							 &pgsp_explain_format,
+							 EXPLAIN_FORMAT_TEXT,
+							 format_options,
+							 PGC_SUSET,
 							 0,
 							 NULL,
 							 NULL,
@@ -554,12 +579,15 @@ error:
 static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+	if (pgsp_explaining)
+		queryDesc->instrument_options |= INSTRUMENT_TIMER;
+
 	if (prev_ExecutorStart)
 		prev_ExecutorStart(queryDesc, eflags);
 	else
 		standard_ExecutorStart(queryDesc, eflags);
 
-	if (pgsp_enabled())
+	if (pgsp_enabled() || pgsp_explaining)
 	{
 		/*
 		 * Set up to track total elapsed time in ExecutorRun.  Make sure the
@@ -629,25 +657,27 @@ pgsp_ExecutorFinish(QueryDesc *queryDesc)
 static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
-	if (queryDesc->totaltime && pgsp_enabled())
+	Oid planId = 0;
+
+	if (queryDesc->totaltime && (pgsp_enabled() || pgsp_explaining))
 	{
 		pgspJumbleState	jstate;
-		Oid planId = 0;
 		/* Set up workspace for plan jumbling */
 		jstate.jumble = (unsigned char *) palloc(JUMBLE_SIZE);
 		jstate.jumble_len = 0;
-
-		/* Compute plan ID */
-		JumblePlan(&jstate, queryDesc->plannedstmt);
-		/* Avoid cast from int */
-		planId |= hash_any(jstate.jumble, jstate.jumble_len);
-
 		/*
 		 * Make sure stats accumulation is done.  (Note: it's okay if several
 		 * levels of hook all do this.)
 		 */
 		InstrEndLoop(queryDesc->totaltime);
+		/* Compute plan ID */
+		JumblePlan(&jstate, queryDesc->plannedstmt);
+		/* Avoid cast from int */
+		planId |= hash_any(jstate.jumble, jstate.jumble_len);
+	}
 
+	if (queryDesc->totaltime && pgsp_enabled())
+	{
 		pgsp_store(queryDesc->sourceText,
 				   planId,
 				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
@@ -657,6 +687,20 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
 					 (errmsg("planid: %u", planId)));
+	}
+
+	if (pgsp_explaining)
+	{
+		/* Save explain text to a cstring in the top transaction memory context */
+		MemoryContext mct = MemoryContextSwitchTo(TopMemoryContext);
+
+		explain_text = pgsp_explain(queryDesc);
+
+		pgsp_planid = planId;
+
+		MemoryContextSwitchTo(mct);
+
+		pgsp_explaining = false;
 	}
 
 	if (prev_ExecutorEnd)
@@ -860,12 +904,6 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 
 		values[i++] = ObjectIdGetDatum(entry->key.userid);
 		values[i++] = ObjectIdGetDatum(entry->key.dbid);
-
-		/*
-		 * As an expedient way of bitwise casting (to avoid a signedness
-		 * conversion), simply treat planid as an Oid. Avoid displaying negative
-		 * planids.
-		 */
 		values[i++] = ObjectIdGetDatum(entry->key.planid);
 
 		if (is_superuser || entry->key.userid == userid)
@@ -919,8 +957,8 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 }
 
 /*
- * For a given planid, return explain output, and the original SQL text, as a
- * text Datum.
+ * For a given planid, return explain output, and the original SQL text, as
+ * text.
  *
  * Note that we are in no position to guarantee that the plan generated by
  * explaining the original query execution text of the entry is going to be the
@@ -930,15 +968,161 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 text *
 pg_stat_plans_explain(PG_FUNCTION_ARGS)
 {
-	Oid			planid = PG_GETARG_OID(0);
-	text	   *result = (text *) palloc0(128 + VARHDRSZ);
-	int			c;
+	Oid			planid	= PG_GETARG_OID(0);
+	Oid			userid	= PG_GETARG_OID(1);
+	Oid			dbid	= PG_GETARG_OID(2);
+	Oid			encod	= PG_GETARG_OID(3);
+	text	   *result;
+	pgspHashKey key;
+	pgspEntry  *entry;
 
-	c = snprintf(VARDATA(result), 128, "%u", planid);
+	/* Set up key for hashtable search */
+	key.userid = userid? userid: GetUserId();
+	key.dbid = dbid? dbid: MyDatabaseId;
+	key.encoding = encod? encod: GetDatabaseEncoding();
+	key.planid = planid;
 
-	SET_VARSIZE(result, c + VARHDRSZ);
+	if (pgsp_explaining)
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_INVALID_RECURSION),
+				 errmsg("recursive call to pg_stat_plans_explain")));
+		PG_RETURN_NULL();
+	}
+
+	/* Lookup the hash table entry with shared lock. */
+	LWLockAcquire(pgsp->lock, LW_SHARED);
+
+	entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
+	if (entry)
+	{
+		StringInfoData query;
+		/* Obtain query string for explain */
+		int ret;
+
+		initStringInfo(&query);
+		appendStringInfo(&query, "EXPLAIN ");
+		/* We rely on the assumption that this is NULL-terminated for us: */
+		appendBinaryStringInfo(&query, entry->query, entry->query_len);
+		LWLockRelease(pgsp->lock);
+
+		/*
+		 * Connect to SPI manager
+		 */
+		if ((ret = SPI_connect()) != SPI_OK_CONNECT)
+			/* internal error */
+			elog(ERROR, "SPI connect failure - returned %d", ret);
+
+		PG_TRY();
+		{
+			pgsp_explaining = true;
+			ret = SPI_execute(query.data, false, 0);
+		}
+		PG_CATCH();
+		{
+			pgsp_explaining = false;
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+
+		SPI_finish();
+
+		pgsp_explaining = false;
+
+		if (explain_text)
+		{
+			Size len = strlen(explain_text);
+			/* explain_text was set in SPI call - return it here. */
+
+			if (pgsp_planid != planid)
+			{
+				/* Warn user of differing plans for the entry */
+				StringInfoData err;
+
+				ereport(WARNING,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("Existing entry planid (%u) differs from new plan "
+							 "for query (%u).", planid, pgsp_planid)));
+
+				initStringInfo(&err);
+				appendStringInfo(&err, "***** Existing entry's planid (%u) "
+										"and explain of original SQL query "
+										"string planid (%u) differ "
+										"*****\n", planid, pgsp_planid);
+
+				result = palloc(err.len + len + VARHDRSZ);
+				SET_VARSIZE(result, err.len + len + VARHDRSZ);
+				memcpy(VARDATA(result), err.data, err.len);
+				memcpy(VARDATA(result) + err.len, explain_text, len);
+			}
+			else
+			{
+				result = palloc(len + VARHDRSZ);
+				SET_VARSIZE(result, len + VARHDRSZ);
+				memcpy(VARDATA(result), explain_text, len);
+			}
+
+			pfree(explain_text);
+			explain_text = NULL;
+		}
+		else
+		{
+			/* This is really just defensive */
+			const char *e = "<unavailable>";
+			Size len			  = strlen(e);
+			result = palloc(len + VARHDRSZ);
+			SET_VARSIZE(result, len + VARHDRSZ);
+			memcpy(VARDATA(result), e, len);
+		}
+	}
+	else
+	{
+		LWLockRelease(pgsp->lock);
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("planid '%u' does not exist in shared hashtable.",
+						planid),
+					errhint("userid given was %u, dbid %u. encodingid, %u",
+						key.userid, key.dbid, key.encoding)));
+	}
 
 	return result;
+}
+
+/*
+ * pgsp_explain: Returns a NULL-terminated cstring of palloc'd memory,
+ * containing explain output for the given query descriptor.
+ */
+static char *
+pgsp_explain(QueryDesc *queryDesc)
+{
+	ExplainState es;
+
+	ExplainInitState(&es);
+	es.analyze = false;
+	es.verbose = false;
+	es.buffers = false;
+	es.format = pgsp_explain_format;
+
+	ExplainBeginOutput(&es);
+	ExplainQueryText(&es, queryDesc);
+	ExplainPrintPlan(&es, queryDesc);
+	ExplainEndOutput(&es);
+
+	/* Remove last line break */
+	if (es.str->len > 0 && es.str->data[es.str->len - 1] == '\n')
+		es.str->data[--es.str->len] = '\0';
+
+	/* Fix JSON to output an object */
+	if (pgsp_explain_format == EXPLAIN_FORMAT_JSON)
+	{
+		es.str->data[0] = '{';
+		es.str->data[es.str->len - 1] = '}';
+	}
+
+	/* Caller should free this buffer */
+	return es.str->data;
 }
 
 /*

@@ -61,7 +61,8 @@ RETURNS SETOF record
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
-CREATE FUNCTION pg_stat_plans_explain(planid oid)
+CREATE FUNCTION pg_stat_plans_explain(planid oid, userid oid default 0,
+					dbid oid default 0, encodingid oid default 0)
 RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
@@ -70,7 +71,7 @@ LANGUAGE C;
 CREATE VIEW pg_stat_plans AS
   SELECT * FROM pg_stat_plans();
 
-CREATE VIEW pg_stat_plan_queries AS
+CREATE VIEW pg_stat_plans_queries AS
   SELECT
 	userid,
 	dbid,
@@ -99,6 +100,7 @@ CREATE VIEW pg_stat_plan_queries AS
 	1, 2, 6;
 
 GRANT SELECT ON pg_stat_plans TO PUBLIC;
+GRANT SELECT ON pg_stat_plans_queries TO PUBLIC;
 
 -- Don't want this to be available to non-superusers.
 REVOKE ALL ON FUNCTION pg_stat_plans_reset() FROM PUBLIC;
