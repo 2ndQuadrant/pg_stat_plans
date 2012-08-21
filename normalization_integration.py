@@ -252,40 +252,40 @@ def main():
                     "select * from orderlines ol left outer join orders o on o.orderid = ol.orderid;", conn)
 
     verify_statement_equivalency(
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or 'foo' = upper(lower(upper(initcap(initcap(lower('Foo'))))));",
-    "select 1 from orders where 1=2 and 'feew' = 'fi' or 'bar' = upper(lower(upper(initcap(initcap(lower('Foo'))))));",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or 'foo' = upper(lower(upper(initcap(initcap(lower(orderid::text))))));",
+    "select 1 from orders where 1=2 and 'feew' = 'fi' or 'bar' = upper(lower(upper(initcap(initcap(lower(orderid::text))))));",
                 conn)
 
     verify_statement_differs(
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or 'foo' = upper(lower(upper(initcap(upper  (lower('Foo'))))));",
-    "select 1 from orders where 1=2 and 'feew' = 'fi' or 'bar' = upper(lower(upper(initcap(initcap(lower('Foo'))))));",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or 'foo' = upper(lower(upper(initcap(upper  (lower(orderid::text))))));",
+    "select 1 from orders where 1=2 and 'feew' = 'fi' or 'bar' = upper(lower(upper(initcap(initcap(lower(orderid::text))))));",
                 conn)
 
     verify_statement_differs(
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or upper(lower(upper(initcap(upper(lower('Foo')))))) is null;",
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or upper(lower(upper(initcap(upper(lower('Foo')))))) is not null;",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or upper(lower(upper(initcap(upper(lower(orderid::text)))))) is null;",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or upper(lower(upper(initcap(upper(lower(orderid::text)))))) is not null;",
                 conn)
 
     verify_statement_differs(
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or     upper(lower(upper(initcap(upper(lower('Foo')))))) is null;",
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or not upper(lower(upper(initcap(upper(lower('Foo')))))) is null;",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or     upper(lower(upper(initcap(upper(lower(orderid::text)))))) is null;",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or not upper(lower(upper(initcap(upper(lower(orderid::text)))))) is null;",
                 conn)
 
     # Nested BoolExpr is a differentiator:
     verify_statement_differs(
-    "select 1 from orders where 1=55 and 'foo' = 'fi' or  'foo' = upper(lower(upper(initcap(upper (lower('Foo'))))));",
-    "select 1 from orders where 1=55 and 'foo' = 'fi' and 'foo' = upper(lower(upper(initcap(upper (lower('Foo'))))));",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' or  'foo' = upper(lower(upper(initcap(upper (lower(orderid::text))))));",
+    "select 1 from orders where 1=55 and 'foo' = 'fi' and 'foo' = upper(lower(upper(initcap(upper (lower(orderid::text))))));",
                 conn)
 
     # For aggregates too
     verify_statement_differs(
-    "select array_agg(lower(upper(initcap(initcap(lower('Foo')))))) from orders;",
-    "select array_agg(lower(upper(lower(initcap(lower('Bar')))))) from orders;",
+    "select array_agg(lower(upper(initcap(initcap(lower(orderid::text)))))) from orders;",
+    "select array_agg(lower(upper(lower(initcap(lower(orderid::text)))))) from orders;",
                 conn)
 
     verify_statement_equivalency(
-    "select array_agg(lower(upper(lower(initcap(lower('Baz')))))) from orders;",
-    "select array_agg(lower(upper(lower(initcap(lower('Bar')))))) from orders;",
+    "select array_agg(lower(upper(lower(initcap(lower(orderid::text)))))) from orders;",
+    "select array_agg(lower(upper(lower(initcap(lower(orderid::text)))))) from orders;",
                 conn)
     # Row-wise comparison
     verify_statement_differs(
