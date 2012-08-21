@@ -185,3 +185,17 @@ However, the module can differentiate between these queries just fine::
 
   select upper(lower(firstname)) from customers;
   select upper(upper(firstname)) from customers;
+
+No particular effort is made by the module to ensure that it can explain a
+truncated query text. If you run pg_stat_plans_explain on an entry whose query
+text exceeds ``track_activity_query_size``, a syntax error may result. In fact,
+it's possible (though quite unlikely) that there *will not* be a syntax error,
+and an entirely distinct query will be explained, leading to a misrepresentation
+of query execution costs.
+
+pg_stat_plans inherits some limitations from pg_stat_statements. In some cases,
+plans that have significantly different query texts might get merged into a single
+pg_stat_plans entry. Normally this will happen only because plans are
+substantively equivalent, but there is a small chance of hash collisions causing
+unrelated plans to be merged into one entry. However, this cannot happen with
+plans that belong to different users or databases.

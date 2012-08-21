@@ -77,7 +77,7 @@ typedef struct pgspHashKey
 	Oid			userid;			/* user OID */
 	Oid			dbid;			/* database OID */
 	int			encoding;		/* query encoding */
-	Oid			planid;			/* plan identifier */
+	Oid			planid;			/* plan "OID" */
 } pgspHashKey;
 
 /*
@@ -692,10 +692,11 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 
 	if (pgsp_explaining)
 	{
-		/* Save explain text to a cstring in the top transaction memory context */
+		/* Save explain text to a cstring in the top memory context */
 		MemoryContext mct = MemoryContextSwitchTo(TopMemoryContext);
 
 		explain_text = pgsp_explain(queryDesc);
+		/* Save planId for later validation */
 		pgsp_planid = planId;
 
 		MemoryContextSwitchTo(mct);
@@ -752,8 +753,6 @@ pgsp_store(const char *query, Oid planId,
 	pgspHashKey key;
 	pgspEntry  *entry;
 	int			query_len;
-	bool		invalidated = false;
-
 
 	Assert(query != NULL);
 
@@ -809,9 +808,6 @@ pgsp_store(const char *query, Oid planId,
 
 		SpinLockAcquire(&e->mutex);
 
-		if (!e->counters.query_valid)
-			invalidated = true;
-
 		e->counters.calls += 1;
 		e->counters.total_time += total_time;
 		e->counters.rows += rows;
@@ -828,16 +824,18 @@ pgsp_store(const char *query, Oid planId,
 		SpinLockRelease(&e->mutex);
 	}
 
-	if (invalidated)
+	if (!entry->counters.query_valid)
 	{
 		/*
 		 * Entry was previously found to have a query string that no longer
 		 * produces this plan. This may be due to adjustments in planner cost
-		 * constants, changing statistical distributions, and many other things.
+		 * constants, a critical change in statistical distribution, and many
+		 * other things.
 		 *
 		 * Update the entry's query string so that its query string is
-		 * representative. We don't just do this all the time because it entails
-		 * taking an exclusive lock.
+		 * representative. We don't do this all the time because it entails
+		 * taking an exclusive lock, and because there may be some value in
+		 * having a relatively stable query string.
 		 */
 		LWLockRelease(pgsp->lock);
 		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
@@ -1044,13 +1042,13 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 	if (entry)
 	{
-		StringInfoData query;
 		/* Obtain query string for explain */
+		StringInfoData query;
 		int ret;
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
-		/* We rely on the assumption that this gets NULL-terminated: */
+		/* we rely on the assumption that this gets NULL-terminated: */
 		appendBinaryStringInfo(&query, entry->query, entry->query_len);
 		LWLockRelease(pgsp->lock);
 
@@ -1080,7 +1078,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		if (explain_text)
 		{
 			Size len = strlen(explain_text);
-			/* explain_text was set in SPI call - return it here. */
+			/* explain_text was set in SPI call - return it to our caller now */
 
 			if (pgsp_planid != planid)
 			{
@@ -1151,7 +1149,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 }
 
 /*
- * pgsp_explain: Returns a NULL-terminated cstring of palloc'd memory,
+ * pgsp_explain: Returns a NULL-terminated cstring in palloc'd memory,
  * containing explain output for the given query descriptor.
  */
 static char *
@@ -1229,11 +1227,12 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 	{
 		/* New entry, initialize it */
 
-		entry->counters.query_valid = true;
 		/* reset the statistics */
 		memset(&entry->counters, 0, sizeof(Counters));
 		/* set the appropriate initial usage count */
 		entry->counters.usage = USAGE_INIT;
+		/* query string starts out valid */
+		entry->counters.query_valid = true;
 		/* re-initialize the mutex each time ... we assume no one using it */
 		SpinLockInit(&entry->mutex);
 		/* ... and don't forget the query text */
@@ -1326,7 +1325,7 @@ entry_reset(void)
 }
 
 /*
- * AppendJumble: Append a value that is substantive in a given query to
+ * AppendJumble: Append a value that is substantive in a given plan to
  * the current jumble.
  */
 static void
@@ -1596,6 +1595,22 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_SubPlan:
 			{
 				SubPlan *sp = (SubPlan *) node;
+				JumbleExpr(jstate, sp->testexpr);
+				foreach(temp, sp->setParam)
+				{
+					Node *param = (Node *) lfirst(temp);
+					JumbleExpr(jstate, param);
+				}
+				foreach(temp, sp->parParam)
+				{
+					Node *param = (Node *) lfirst(temp);
+					JumbleExpr(jstate, param);
+				}
+				foreach(temp, sp->args)
+				{
+					Node *arg = (Node *) lfirst(temp);
+					JumbleExpr(jstate, arg);
+				}
 			}
 			break;
 		case T_SubLink:
