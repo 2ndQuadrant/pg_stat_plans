@@ -199,7 +199,7 @@ void		_PG_fini(void);
 
 Datum		pg_stat_plans_reset(PG_FUNCTION_ARGS);
 Datum		pg_stat_plans(PG_FUNCTION_ARGS);
-text		*pg_stat_plan_explain(PG_FUNCTION_ARGS);
+text		*pg_stat_plans_explain(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_stat_plans_reset);
 PG_FUNCTION_INFO_V1(pg_stat_plans);
@@ -1601,11 +1601,6 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 					Node *param = (Node *) lfirst(temp);
 					JumbleExpr(jstate, param);
 				}
-				foreach(temp, sp->parParam)
-				{
-					Node *param = (Node *) lfirst(temp);
-					JumbleExpr(jstate, param);
-				}
 				foreach(temp, sp->args)
 				{
 					Node *arg = (Node *) lfirst(temp);
@@ -2055,16 +2050,31 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_NestLoop:
 			{
 				NestLoop *nl = (NestLoop *) node;
+				foreach(temp, nl->nestParams)
+				{
+					Node *param = (Node *) lfirst(temp);
+					JumbleExpr(jstate, param);
+				}
 			}
 			break;
 		case T_MergeJoin:
 			{
 				MergeJoin *mj = (MergeJoin *) node;
+				foreach(temp, mj->mergeclauses)
+				{
+					Node *clause = (Node *) lfirst(temp);
+					JumbleExpr(jstate, clause);
+				}
 			}
 			break;
 		case T_HashJoin:
 			{
 				HashJoin *hj = (HashJoin *) node;
+				foreach(temp, hj->hashclauses)
+				{
+					Node *clause = (Node *) lfirst(temp);
+					JumbleExpr(jstate, clause);
+				}
 			}
 			break;
 		case T_Material:
@@ -2141,16 +2151,19 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_NestLoopParam:
 			{
 				NestLoopParam *nlp = (NestLoopParam *) node;
+				JumbleExpr(jstate, (Node *) nlp->paramval);
 			}
 			break;
 		case T_PlanRowMark:
 			{
 				PlanRowMark *prm = (PlanRowMark*) node;
+				APP_JUMB(prm->markType);
 			}
 			break;
 		case T_PlanInvalItem:
 			{
 				PlanInvalItem *pii = (PlanInvalItem*) node;
+				APP_JUMB(pii->tupleId);
 			}
 			break;
 		/* Non-plan nodes that are known to appear in plannedStmts: */
@@ -2160,17 +2173,17 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_BitString:
 		case T_Null:
 			{
-				Value *v = (Value *) node;
+				/* Do nothing */
 			}
 			break;
 		case T_ColumnDef:
 			{
-				ColumnDef *cd = (ColumnDef *) node;
+				/* Do nothing */
 			}
 			break;
 		case T_DefElem:
 			{
-				DefElem *de = (DefElem *) node;
+				/* Do nothing */
 			}
 			break;
 		default:
