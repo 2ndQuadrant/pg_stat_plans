@@ -1956,6 +1956,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) is->indexorderby);
 				JumbleExpr(jstate, (Node *) is->indexorderbyorig);
 				JumbleExpr(jstate, (Node *) is->indexqual);
+				APP_JUMB(is->indexorderdir);
 			}
 			break;
 		case T_BitmapIndexScan:
