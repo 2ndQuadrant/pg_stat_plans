@@ -1449,6 +1449,8 @@ JumblePlanHeader(pgspJumbleState *jstate, Plan *plan)
 {
 	JumbleExpr(jstate, (Node *) plan->qual);
 	JumbleExpr(jstate, (Node *) plan->targetlist);
+	JumbleExpr(jstate, (Node *) plan->lefttree);
+	JumbleExpr(jstate, (Node *) plan->righttree);
 }
 
 /*
@@ -1614,6 +1616,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 
 				APP_JUMB(sublink->subLinkType);
 				JumbleExpr(jstate, (Node *) sublink->testexpr);
+				JumbleExpr(jstate, (Node *) sublink->subselect);
 			}
 			break;
 		case T_FieldSelect:
@@ -1944,6 +1947,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				SeqScan *sqs = (SeqScan *) node;
 
 				JumblePlanHeader(jstate, &sqs->plan);
+				APP_JUMB(sqs->scanrelid);
 			}
 			break;
 		case T_IndexScan:
@@ -1956,6 +1960,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) is->indexorderby);
 				JumbleExpr(jstate, (Node *) is->indexorderbyorig);
 				JumbleExpr(jstate, (Node *) is->indexqual);
+				APP_JUMB(is->indexid);
 				APP_JUMB(is->indexorderdir);
 			}
 			break;
@@ -1964,6 +1969,9 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				BitmapIndexScan *bis = (BitmapIndexScan *) node;
 
 				JumbleScanHeader(jstate, &bis->scan);
+				APP_JUMB(bis->indexid);
+				JumbleExpr(jstate, (Node *) bis->indexqual);
+				JumbleExpr(jstate, (Node *) bis->indexqualorig);
 			}
 			break;
 		case T_BitmapHeapScan:
@@ -2046,6 +2054,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				Join *j = (Join *) node;
 
 				JumblePlanHeader(jstate, &j->plan);
+				APP_JUMB(j->jointype);
 			}
 			break;
 		case T_NestLoop:
