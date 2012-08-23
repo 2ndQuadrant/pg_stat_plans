@@ -68,6 +68,11 @@ RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
+CREATE FUNCTION pg_stat_plans_pprint(sqltext text)
+RETURNS TEXT
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
 -- Register a view on the function for ease of use.
 CREATE VIEW pg_stat_plans AS
   SELECT * FROM pg_stat_plans();
@@ -103,5 +108,6 @@ CREATE VIEW pg_stat_plans_queries AS
 GRANT SELECT ON pg_stat_plans TO PUBLIC;
 GRANT SELECT ON pg_stat_plans_queries TO PUBLIC;
 
--- Don't want this to be available to non-superusers.
+-- Don't want these to be available to non-superusers.
 REVOKE ALL ON FUNCTION pg_stat_plans_reset() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pg_stat_plans_pprint() FROM PUBLIC;

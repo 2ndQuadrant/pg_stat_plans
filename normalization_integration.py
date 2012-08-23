@@ -27,23 +27,22 @@ test_no = 1
 failures = 0
 
 
-def do_post_mortem(conn):
-    sys.stderr.write("Post-mortem:\n")
-    cur = conn.cursor()
-    cur.execute("select query, calls from pg_stat_plans;")
-    for i in cur:
-        for j in i:
-            sys.stderr.write(str(j) + " \n")
-
-    print "\n"
-
-
 def print_queries(conn):
     print "Queries that were found in pg_stat_plans: "
     cur = conn.cursor()
     cur.execute("select query from pg_stat_plans;")
     for i in cur:
         print i[0]
+
+
+def print_query_trees(sql, equiv, cur):
+    # Print both query's query trees
+    cur.execute("select pg_stat_plans_pprint(%s)", (sql, ))
+    treea = cur.fetchone()[0]
+    cur.execute("select pg_stat_plans_pprint(%s)", (equiv, ))
+    treeb = cur.fetchone()[0]
+    sys.stderr.write("first:\n" + treea + "\n")
+    sys.stderr.write("second:\n" + treeb + "\n")
 
 
 def verify_statement_equivalency(sql, equiv, conn, test_name=None, cleanup_sql=None):
@@ -81,11 +80,11 @@ def verify_statement_equivalency(sql, equiv, conn, test_name=None, cleanup_sql=N
         tuple_n = i[0]
 
     if tuple_n != 1:
-        do_post_mortem(conn)
         sys.stderr.write("""The SQL statements \n'{0}'\n and \n'{1}'\n do not
                 appear to be equivalent!  Test {2} failed.\n""".format(sql,
                 equiv, test_no if test_name is None else "'{0}'({1})".format(test_name, test_no)))
         failures += 1
+        print_query_trees(sql, equiv, cur)
 
     print """The statements \n'{0}'\n and \n'{1}'\n are equivalent, as
     expected.  Test {2} passed.\n\n""".format(sql, equiv, test_no if test_name
@@ -127,11 +126,11 @@ def verify_statement_differs(sql, diff, conn, test_name=None, cleanup_sql=None):
         tuple_n = i[0]
 
     if tuple_n != 2:
-        do_post_mortem(conn)
         sys.stderr.write("""The SQL statements \n'{0}'\n and \n'{1}'\n do not
                 appear to be different!  Test {2} failed.\n""".format(sql, diff,
                 test_no if test_name is None else "'{0}'({1})".format(test_name, test_no)))
         failures += 1
+        print_query_trees(sql, diff, cur)
 
     print """The statements \n'{0}'\n and \n'{1}'\n are not equivalent, as expected.
         Test {2} passed.\n\n """.format(sql, diff, test_no if test_name is None else "'{0}' ({1})".format(test_name, test_no))
@@ -142,7 +141,6 @@ def test_assert(assertion, conn):
     global test_no
     global failures
     if not assertion:
-        do_post_mortem(conn)
         raise SystemExit("Assertion (test {0}) failed!\n".format(test_no))
         failures += 1
 

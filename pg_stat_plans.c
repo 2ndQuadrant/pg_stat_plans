@@ -40,6 +40,7 @@
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "nodes/print.h"
 #include "pgstat.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -139,10 +140,19 @@ typedef struct pgspJumbleState
 
 /*---- Local variables ----*/
 
+typedef enum
+{
+	PGSP_NO_EXPLAIN = 0,
+	PGSP_EXPLAIN_TEXT,
+	PGSP_EXPLAIN_TREE
+} PGSPExplainLevel;
+
 /* Current nesting depth of ExecutorRun calls */
 static int	nested_level = 0;
 /* Current query's explain text */
 static char *explain_text = NULL;
+/* whether currently explaining query */
+static PGSPExplainLevel pgsp_explaining = PGSP_NO_EXPLAIN;
 
 /* Saved hook values in case of unload */
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -185,7 +195,6 @@ static int	pgsp_track;			/* tracking level */
 static bool pgsp_save;			/* whether to save stats across shutdown */
 static bool pgsp_planid_notice;	/* whether to give planid NOTICE */
 static int	pgsp_explain_format = EXPLAIN_FORMAT_TEXT;
-static bool pgsp_explaining = false; /* whether currently explaining query */
 static Oid	pgsp_planid = -1;	/* last planid explained for backend */
 
 #define pgsp_enabled() \
@@ -200,10 +209,12 @@ void		_PG_fini(void);
 Datum		pg_stat_plans_reset(PG_FUNCTION_ARGS);
 Datum		pg_stat_plans(PG_FUNCTION_ARGS);
 text		*pg_stat_plans_explain(PG_FUNCTION_ARGS);
+text		*pg_stat_plans_pprint(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_stat_plans_reset);
 PG_FUNCTION_INFO_V1(pg_stat_plans);
 PG_FUNCTION_INFO_V1(pg_stat_plans_explain);
+PG_FUNCTION_INFO_V1(pg_stat_plans_pprint);
 
 static void pgsp_shmem_startup(void);
 static void pgsp_shmem_shutdown(int code, Datum arg);
@@ -692,16 +703,23 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 
 	if (pgsp_explaining)
 	{
-		/* Save explain text to a cstring in the top memory context */
+		/*
+		 * Save explain text or string representation of plan tree to a cstring
+		 * in the top memory context.
+		 */
 		MemoryContext mct = MemoryContextSwitchTo(TopMemoryContext);
 
-		explain_text = pgsp_explain(queryDesc);
+		if (pgsp_explaining == PGSP_EXPLAIN_TEXT)
+			explain_text = pgsp_explain(queryDesc);
+		else if(pgsp_explaining == PGSP_EXPLAIN_TREE)
+			explain_text = nodeToString(queryDesc->plannedstmt);
+
 		/* Save planId for later validation */
 		pgsp_planid = planId;
 
 		MemoryContextSwitchTo(mct);
 
-		pgsp_explaining = false;
+		pgsp_explaining = PGSP_NO_EXPLAIN;
 	}
 
 	if (prev_ExecutorEnd)
@@ -1061,19 +1079,19 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		PG_TRY();
 		{
-			pgsp_explaining = true;
+			pgsp_explaining = PGSP_EXPLAIN_TEXT;
 			ret = SPI_execute(query.data, false, 0);
 		}
 		PG_CATCH();
 		{
-			pgsp_explaining = false;
+			pgsp_explaining = PGSP_NO_EXPLAIN;
 			PG_RE_THROW();
 		}
 		PG_END_TRY();
 
 		SPI_finish();
 
-		pgsp_explaining = false;
+		pgsp_explaining = PGSP_NO_EXPLAIN;
 
 		if (explain_text)
 		{
@@ -1102,11 +1120,12 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				memcpy(VARDATA(result) + err.len, explain_text, len);
 				/* Update hashtable to invalidate query string */
 				LWLockAcquire(pgsp->lock, LW_SHARED);
+				entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
 				/* Invalidate query iff necessary */
 				if (entry->counters.query_valid)
 				{
-					volatile pgspEntry *e = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
-
+					volatile pgspEntry *e = entry;
 					SpinLockAcquire(&e->mutex);
 					e->counters.query_valid = false;
 					SpinLockRelease(&e->mutex);
@@ -1181,6 +1200,54 @@ pgsp_explain(QueryDesc *queryDesc)
 
 	/* Caller should free this buffer */
 	return es.str->data;
+}
+
+/*
+ * For any given optimizable query's SQL text, pretty-print the plan tree.
+ *
+ * This is useful for debugging purposes - we should be able to diff the output
+ * of this function to highlight differences in query trees that are not due to
+ * "non-essential" differences in plan trees, such as planner costs.
+ */
+text *
+pg_stat_plans_pprint(PG_FUNCTION_ARGS)
+{
+	text	   *sql_text = PG_GETARG_TEXT_P(0);
+	char	   *f;
+	text	   *ret;
+	int			r;
+
+	/* Get the plannedstmt of the SQL query */
+
+	/*
+	 * Connect to SPI manager
+	 */
+	if ((r = SPI_connect()) != SPI_OK_CONNECT)
+		/* internal error */
+		elog(ERROR, "SPI connect failure - returned %d", r);
+
+	PG_TRY();
+	{
+		pgsp_explaining = PGSP_EXPLAIN_TREE;
+		r = SPI_execute(text_to_cstring(sql_text), false, 0);
+	}
+	PG_CATCH();
+	{
+		pgsp_explaining = PGSP_NO_EXPLAIN;
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	SPI_finish();
+
+	pgsp_explaining = PGSP_NO_EXPLAIN;
+
+	f = pretty_format_node_dump(explain_text);
+	pretty_format_node_dump(f);
+	ret = cstring_to_text(f);
+	pfree(f);
+
+	return ret;
 }
 
 /*
