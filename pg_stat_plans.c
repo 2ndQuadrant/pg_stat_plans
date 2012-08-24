@@ -2177,6 +2177,17 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_Sort:
 			{
 				Sort *so = (Sort *) node;
+				int i;
+
+				for (i = 0; i < so->numCols; i++)
+				{
+					AttrNumber	at = so->sortColIdx[i];
+					Oid			op = so->sortOperators[i];
+					bool		nf = so->nullsFirst[i];
+					APP_JUMB(at);
+					APP_JUMB(op);
+					APP_JUMB(nf);
+				}
 
 				JumblePlanHeader(jstate, &so->plan);
 			}
