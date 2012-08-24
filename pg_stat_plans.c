@@ -1784,7 +1784,9 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 			}
 			break;
 		case T_CoalesceExpr:
-			JumbleExpr(jstate, (Node *) ((CoalesceExpr *) node)->args);
+			{
+				JumbleExpr(jstate, (Node *) ((CoalesceExpr *) node)->args);
+			}
 			break;
 		case T_MinMaxExpr:
 			{

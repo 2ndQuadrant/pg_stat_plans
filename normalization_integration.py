@@ -301,8 +301,8 @@ def main():
 
     # Use lots of different operators:
     verify_statement_differs(
-    "select 1 < 2;",
-    "select 1 <= 2;",
+    "select 1 < orderid from orders;",
+    "select 1 <= orderid from orders;",
                 conn)
 
     verify_statement_differs(
