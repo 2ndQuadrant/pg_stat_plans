@@ -1680,6 +1680,12 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				}
 			}
 			break;
+		case T_AlternativeSubPlan:
+			{
+				AlternativeSubPlan *alt = (AlternativeSubPlan *) node;
+				JumbleExpr(jstate, (Node *) alt);
+			}
+			break;
 		case T_SubLink:
 			{
 				SubLink    *sublink = (SubLink *) node;
