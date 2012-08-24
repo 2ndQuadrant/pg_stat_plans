@@ -244,8 +244,6 @@ def main():
     # Coalesce
     verify_statement_equivalency("select coalesce(orderid, null, null) from orders where orderid = 5 and 1=1;",
                     "select coalesce(orderid, 5, 5) from orders where orderid = 7 and 3=3;", conn)
-    verify_statement_differs("select coalesce(orderid, 5, 5, 6 ) from orders where orderid = 5 and 1=1;",
-                    "select coalesce(orderid, 5, 5) from orders where orderid = 7 and 3=3;", conn)
 
     # Observe what we can do with noise words (no "outer" in later statement, plus we use AS in the second query):
     verify_statement_equivalency("select * from orders o left outer join orderlines ol on o.orderid = ol.orderid;",
