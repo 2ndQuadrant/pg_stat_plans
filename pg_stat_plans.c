@@ -1977,6 +1977,11 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) mt->resultRelations);
 				JumbleExpr(jstate, (Node *) mt->returningLists);
 				JumbleExpr(jstate, (Node *) mt->rowMarks);
+				foreach(temp, mt->plans)
+				{
+					Node* plan = lfirst(temp);
+					JumbleExpr(jstate, plan);
+				}
 			}
 			break;
 		case T_Append:
