@@ -555,12 +555,6 @@ def main():
     "select orderid   into orders_recent FROM orders WHERE orderdate > '2002-01-01';",
     cleanup_sql="drop table if exists orders_recent;", conn=conn)
 
-    # Here, name of new relation matters:
-    verify_statement_differs(
-    "select * into orders_recent  FROM orders WHERE orderdate > '2002-01-01';",
-    "select * into orders_recent2 FROM orders WHERE orderdate > '2002-01-01';",
-    cleanup_sql="drop table if exists orders_recent; drop table if exists orders_recent2;", conn=conn)
-
     # CTE
     verify_statement_differs(
     "with a as (select customerid from orders ), b as (select 'foo') select orderid from orders",
