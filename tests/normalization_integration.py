@@ -242,7 +242,7 @@ def main():
         "select * from (values(4, 5, 6, 7)) as v;", conn)
 
     # Coalesce
-    verify_statement_equivalency("select coalesce(orderid, null, null) from orders where orderid = 5 and 1=1;",
+    verify_statement_equivalency("select coalesce(orderid, 3, 2) from orders where orderid = 5 and 1=1;",
                     "select coalesce(orderid, 5, 5) from orders where orderid = 7 and 3=3;", conn)
 
     # Observe what we can do with noise words (no "outer" in later statement, plus we use AS in the second query):
