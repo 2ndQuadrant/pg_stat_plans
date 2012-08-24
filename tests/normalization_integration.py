@@ -567,26 +567,6 @@ def main():
     "with a as (select customerid from orders ), b as (select 1)     select orderid from orders",
     conn)
 
-    # temporary column name within recursive CTEs doesn't differentiate
-    verify_statement_equivalency(
-    """
-    with recursive j(n) AS (
-    values (1)
-    union all
-    select n + 1 from j where n < 100
-    )
-    select avg(n) from j;
-    """,
-    """
-    with recursive k(n) AS (
-    values (1)
-    union all
-    select n + 1 from k where n < 50
-    )
-    select avg(n) from k;
-    """,
-    conn)
-
     # set operation normalization occurs by walking the query tree recursively.
     verify_statement_differs("select orderid from orders union all select customerid from orders", "select customerid from orders union all select orderid from orders", conn)
     verify_statement_equivalency(
