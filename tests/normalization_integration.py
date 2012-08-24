@@ -557,8 +557,8 @@ def main():
 
     # CTE
     verify_statement_differs(
-    "with a as (select customerid from orders ), b as (select 'foo') select orderid from orders",
-    "with a as (select customerid from orders ), b as (select 1)     select orderid from orders",
+    "with a as (select customerid from orders ) select * from a",
+    "with a as (select orderid from orders ) select * from a",
     conn)
 
     # set operation normalization occurs by walking the query tree recursively.
