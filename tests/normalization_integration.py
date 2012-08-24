@@ -37,12 +37,22 @@ def print_queries(conn):
 
 def print_query_trees(sql, equiv, cur):
     # Print both query's query trees
+    import os
+    global test_no
     cur.execute("select pg_stat_plans_pprint(%s)", (sql, ))
     treea = cur.fetchone()[0]
     cur.execute("select pg_stat_plans_pprint(%s)", (equiv, ))
     treeb = cur.fetchone()[0]
     sys.stderr.write("first:\n" + treea + "\n")
     sys.stderr.write("second:\n" + treeb + "\n")
+
+    f_a = open("tree_test_" + str(test_no) + "_a", 'w')
+    f_b = open("tree_test_" + str(test_no) + "_b", 'w')
+    f_a.write(treea)
+    f_b.write(treeb)
+    f_a.close()
+    f_b.close()
+    os.system("diff -u " + f_a.name + " " + f_b.name + "> test" + str(test_no))
 
 
 def verify_statement_equivalency(sql, equiv, conn, test_name=None, cleanup_sql=None):
@@ -915,7 +925,7 @@ def main():
     SELECT c2.relname, i.indisprimary, i.indisunique, i.indisclustered, i.indisvalid, pg_catalog.pg_get_indexdef(i.indexrelid, 0, true),
       pg_catalog.pg_get_constraintdef(con.oid, true), contype, condeferrable, condeferred, c2.reltablespace
     FROM pg_catalog.pg_class c, pg_catalog.pg_class c2, pg_catalog.pg_index i
-      LEFT JOIN pg_catalog.pg_constraint con ON (conrelid = i.indrelid AND conindid = i.indexrelid AND contype IN ('p','d','x', 'd'))
+      LEFT JOIN pg_catalog.pg_constraint con ON (conrelid = i.indrelid AND conindid = i.indexrelid AND contype IN ('p','d','x', 'e'))
     WHERE c.oid = i.indrelid AND i.indexrelid = c2.oid
     ORDER BY i.indisprimary DESC, i.indisunique DESC, c2.relname;
     """,
