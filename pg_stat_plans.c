@@ -1228,8 +1228,11 @@ pg_stat_plans_pprint(PG_FUNCTION_ARGS)
 
 	PG_TRY();
 	{
+		StringInfoData qry;
+		initStringInfo(&qry);
 		pgsp_explaining = PGSP_EXPLAIN_TREE;
-		r = SPI_execute(text_to_cstring(sql_text), false, 0);
+		appendStringInfo(&qry, "EXPLAIN %s", text_to_cstring(sql_text));
+		r = SPI_execute(qry.data, false, 0);
 	}
 	PG_CATCH();
 	{
@@ -1854,6 +1857,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 
 				APP_JUMB(tle->resno);
 				APP_JUMB(tle->ressortgroupref);
+				APP_JUMB(tle->resorigtbl);
+				APP_JUMB(tle->resorigcol);
 				JumbleExpr(jstate, (Node *) tle->expr);
 			}
 			break;
@@ -2127,6 +2132,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_NestLoop:
 			{
 				NestLoop *nl = (NestLoop *) node;
+				APP_JUMB(nl->join.jointype);
+				JumblePlanHeader(jstate, &nl->join.plan);
 				foreach(temp, nl->nestParams)
 				{
 					Node *param = (Node *) lfirst(temp);
@@ -2137,6 +2144,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_MergeJoin:
 			{
 				MergeJoin *mj = (MergeJoin *) node;
+				APP_JUMB(mj->join.jointype);
+				JumblePlanHeader(jstate, &mj->join.plan);
 				foreach(temp, mj->mergeclauses)
 				{
 					Node *clause = (Node *) lfirst(temp);
@@ -2147,6 +2156,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_HashJoin:
 			{
 				HashJoin *hj = (HashJoin *) node;
+				APP_JUMB(hj->join.jointype);
+				JumblePlanHeader(jstate, &hj->join.plan);
 				foreach(temp, hj->hashclauses)
 				{
 					Node *clause = (Node *) lfirst(temp);
