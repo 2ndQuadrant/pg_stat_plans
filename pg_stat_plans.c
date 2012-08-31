@@ -199,7 +199,7 @@ static Oid	pgsp_planid = -1;	/* last planid explained for backend */
 
 #define pgsp_enabled() \
 	(pgsp_track == PGSP_TRACK_ALL || \
-	(pgsp_track == PGSP_TRACK_TOP && nested_level == 0))
+	 (pgsp_track == PGSP_TRACK_TOP && nested_level == 0))
 
 /*---- Function declarations ----*/
 
@@ -220,23 +220,23 @@ static void pgsp_shmem_startup(void);
 static void pgsp_shmem_shutdown(int code, Datum arg);
 static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgsp_ExecutorRun(QueryDesc *queryDesc,
-				 ScanDirection direction,
-				 long count);
+							 ScanDirection direction,
+							 long count);
 static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
-		   double total_time, uint64 rows,
-		   const BufferUsage *bufusage);
+					   double total_time, uint64 rows,
+					   const BufferUsage *bufusage);
 static char *pgsp_explain(QueryDesc *queryDesc);
 static Size pgsp_memsize(void);
 static pgspEntry *entry_alloc(pgspHashKey *key, const char *query,
-			int query_len);
+							  int query_len);
 static void entry_dealloc(void);
 static void entry_reset(void);
 static void AppendJumble(pgspJumbleState *jstate,
-			 const unsigned char *item, Size size);
+						 const unsigned char *item, Size size);
 static void JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan);
 static void JumbleRangeTable(pgspJumbleState *jstate, List *rtable);
 static void JumblePlanHeader(pgspJumbleState *jstate, Plan *plan);
@@ -264,7 +264,7 @@ _PG_init(void)
 	 * Define (or redefine) custom GUC variables.
 	 */
 	DefineCustomIntVariable("pg_stat_plans.max",
-	  "Sets the maximum number of plans tracked by pg_stat_plans.",
+							"Sets the maximum number of plans tracked by pg_stat_plans.",
 							NULL,
 							&pgsp_max,
 							1000,
@@ -277,7 +277,7 @@ _PG_init(void)
 							NULL);
 
 	DefineCustomEnumVariable("pg_stat_plans.track",
-			   "Selects which plans are tracked by pg_stat_plans.",
+							 "Selects which plans are tracked by pg_stat_plans.",
 							 NULL,
 							 &pgsp_track,
 							 PGSP_TRACK_TOP,
@@ -289,7 +289,7 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomBoolVariable("pg_stat_plans.save",
-			   "Save pg_stat_plans statistics across server shutdowns.",
+							 "Save pg_stat_plans statistics across server shutdowns.",
 							 NULL,
 							 &pgsp_save,
 							 true,
@@ -300,8 +300,8 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomBoolVariable("pg_stat_plans.planid_notice",
-			   "Raise notice of a plan's id after its execution. Useful for "
-			   "verifying explain output.",
+							 "Raise notice of a plan's id after its execution. Useful for "
+							 "verifying explain output.",
 							 NULL,
 							 &pgsp_planid_notice,
 							 false,
@@ -698,7 +698,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
-					 (errmsg("planid: %u", planId)));
+					(errmsg("planid: %u", planId)));
 	}
 
 	if (pgsp_explaining)
@@ -881,7 +881,7 @@ pgsp_store(const char *query, Oid planId,
 		LWLockRelease(pgsp->lock);
 		if (entry)
 			elog(NOTICE, "updated pg_stat_plans query string of entry %u",
-					key.planid);
+				 key.planid);
 
 		return;
 	}
@@ -1106,13 +1106,13 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				ereport(WARNING,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("Existing entry planid (%u) differs from new plan "
-							 "for query (%u).", planid, pgsp_planid)));
+								"for query (%u).", planid, pgsp_planid)));
 
 				initStringInfo(&err);
 				appendStringInfo(&err, "***** Existing entry's planid (%u) "
-										"and explain of original SQL query "
-										"string planid (%u) differ "
-										"*****\n", planid, pgsp_planid);
+								 "and explain of original SQL query "
+								 "string planid (%u) differ "
+								 "*****\n", planid, pgsp_planid);
 
 				result = palloc(err.len + len + VARHDRSZ);
 				SET_VARSIZE(result, err.len + len + VARHDRSZ);
@@ -1158,10 +1158,10 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		LWLockRelease(pgsp->lock);
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("planid '%u' does not exist in shared hashtable.",
+				 errmsg("planid '%u' does not exist in shared hashtable.",
 						planid),
-					errhint("userid given was %u, dbid %u. encodingid, %u",
-						key.userid, key.dbid, key.encoding)));
+				 errhint("userid given was %u, dbid %u. encodingid, %u",
+						 key.userid, key.dbid, key.encoding)));
 	}
 
 	return result;
@@ -1959,7 +1959,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, setop->rarg);
 			}
 			break;
-		/* Plan nodes: */
+			/* Plan nodes: */
 		case T_Result:
 			{
 				Result *res = (Result*) node;
@@ -2259,7 +2259,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumblePlanHeader(jstate, &lim->plan);
 			}
 			break;
-		/* these aren't subclasses of Plan: */
+			/* these aren't subclasses of Plan: */
 		case T_NestLoopParam:
 			{
 				NestLoopParam *nlp = (NestLoopParam *) node;
@@ -2278,7 +2278,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				APP_JUMB(pii->tupleId);
 			}
 			break;
-		/* Non-plan nodes that are known to appear in plannedStmts: */
+			/* Non-plan nodes that are known to appear in plannedStmts: */
 		case T_Integer:
 		case T_Float:
 		case T_String:
