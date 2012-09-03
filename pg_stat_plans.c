@@ -1040,9 +1040,9 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	pgspEntry  *entry;
 
 	/* Set up key for hashtable search */
-	key.userid = userid? userid: GetUserId();
-	key.dbid = dbid? dbid: MyDatabaseId;
-	key.encoding = encod? encod: GetDatabaseEncoding();
+	key.userid = PG_ARGISNULL(1)? GetUserId():userid;
+	key.dbid = PG_ARGISNULL(2)? MyDatabaseId:dbid;
+	key.encoding = PG_ARGISNULL(3)? GetDatabaseEncoding():encod;
 	key.planid = planid;
 
 	if (pgsp_explaining)
@@ -1066,7 +1066,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
-		/* we rely on the assumption that this gets NULL-terminated: */
+		/* we rely on the assumption that this is NULL-terminated: */
 		appendBinaryStringInfo(&query, entry->query, entry->query_len);
 		LWLockRelease(pgsp->lock);
 
@@ -1095,19 +1095,13 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		if (explain_text)
 		{
-			Size len = strlen(explain_text);
 			/* explain_text was set in SPI call - return it to our caller now */
+			Size	len = strlen(explain_text);
 
 			if (pgsp_planid != planid)
 			{
 				/* Warn user of differing plans for the entry */
 				StringInfoData err;
-
-				ereport(WARNING,
-						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						 errmsg("Existing entry planid (%u) differs from new plan "
-								"for query (%u).", planid, pgsp_planid)));
-
 				initStringInfo(&err);
 				appendStringInfo(&err, "***** Existing entry's planid (%u) "
 								 "and explain of original SQL query "
@@ -1118,23 +1112,34 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				SET_VARSIZE(result, err.len + len + VARHDRSZ);
 				memcpy(VARDATA(result), err.data, err.len);
 				memcpy(VARDATA(result) + err.len, explain_text, len);
-				/* Update hashtable to invalidate query string */
-				LWLockAcquire(pgsp->lock, LW_SHARED);
-				entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
 				/* Invalidate query iff necessary */
 				if (entry->counters.query_valid)
 				{
-					volatile pgspEntry *e = entry;
-					SpinLockAcquire(&e->mutex);
-					e->counters.query_valid = false;
-					SpinLockRelease(&e->mutex);
-				}
+					/* Log when first observed for the entry */
+					ereport(WARNING,
+							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+							 errmsg("Existing pg_stat_plans entry planid (%u) "
+									"differs from new plan for query (%u).",
+										planid, pgsp_planid)));
 
-				LWLockRelease(pgsp->lock);
+					/* Update hashtable to invalidate query string */
+					LWLockAcquire(pgsp->lock, LW_SHARED);
+					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
+					{
+						volatile pgspEntry *e = entry;
+						SpinLockAcquire(&e->mutex);
+						e->counters.query_valid = false;
+						SpinLockRelease(&e->mutex);
+					}
+
+					LWLockRelease(pgsp->lock);
+				}
 			}
 			else
 			{
+				/* The typical case - just return EXPLAIN output */
 				result = palloc(len + VARHDRSZ);
 				SET_VARSIZE(result, len + VARHDRSZ);
 				memcpy(VARDATA(result), explain_text, len);
@@ -1145,12 +1150,9 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		}
 		else
 		{
-			/* This is really just defensive */
-			const char *e = "<unavailable>";
-			Size len	  = strlen(e);
-			result = palloc(len + VARHDRSZ);
-			SET_VARSIZE(result, len + VARHDRSZ);
-			memcpy(VARDATA(result), e, len);
+			/* This is just defensive - explain text is expected to be set */
+			LWLockRelease(pgsp->lock);
+			elog(ERROR, "EXPLAIN text wasn't set by pg_stat_plans_explain.");
 		}
 	}
 	else

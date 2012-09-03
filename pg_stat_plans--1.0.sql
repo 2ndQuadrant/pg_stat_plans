@@ -32,7 +32,7 @@ CREATE OR REPLACE FUNCTION normalize_query(IN TEXT, OUT TEXT) AS $body$
     'in\s*\([''0x,\s]*\)',          'in (...)',    'g'   )
   ;
 $body$
-LANGUAGE SQL;
+STRICT IMMUTABLE LANGUAGE SQL;
 
 -- Register functions.
 CREATE FUNCTION pg_stat_plans_reset()
@@ -62,8 +62,10 @@ RETURNS SETOF record
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
-CREATE FUNCTION pg_stat_plans_explain(planid oid, userid oid default 0,
-					dbid oid default 0, encodingid oid default 0)
+CREATE FUNCTION pg_stat_plans_explain(planid oid,
+							userid oid default NULL,
+							dbid oid default NULL,
+							encodingid oid default NULL)
 RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
@@ -71,7 +73,7 @@ LANGUAGE C;
 CREATE FUNCTION pg_stat_plans_pprint(sqltext text)
 RETURNS TEXT
 AS 'MODULE_PATHNAME'
-LANGUAGE C;
+STRICT LANGUAGE C;
 
 -- Register a view on the function for ease of use.
 CREATE VIEW pg_stat_plans AS
