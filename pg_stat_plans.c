@@ -1046,12 +1046,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	key.planid = planid;
 
 	if (pgsp_explaining)
-	{
-		ereport(WARNING,
-				(errcode(ERRCODE_INVALID_RECURSION),
-				 errmsg("recursive call to pg_stat_plans_explain")));
-		PG_RETURN_NULL();
-	}
+		elog(ERROR, "recursive call to pg_stat_plans_explain.");
 
 	/* Lookup the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
@@ -1685,7 +1680,13 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_AlternativeSubPlan:
 			{
 				AlternativeSubPlan *alt = (AlternativeSubPlan *) node;
-				JumbleExpr(jstate, (Node *) alt);
+				foreach(temp, alt->subplans)
+				{
+					Node *subplan = (Node*) lfirst(temp);
+					/* Guard against infinite-recursion */
+					if (subplan != (Node*) alt)
+						JumbleExpr(jstate, subplan);
+				}
 			}
 			break;
 		case T_SubLink:
