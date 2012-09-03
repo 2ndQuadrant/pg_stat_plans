@@ -23,6 +23,14 @@ and 9.1 - Postgres 9.2's pg_stat_statements module does not support earlier
 versions of the server, and contrib modules are generally only intended to be
 used with the same version of the server that they're distributed with.
 
+pg_stat_plans is also intended to support advanced use-cases, including the
+aggregation of statistics by third-party tools. This is why the planid value is
+exposed for each entry (notably, the queryid value in pg_stat_statements is
+*not* exposed). It is possible that a future version of pg_stat_plans will have
+explicit support for querying entries based on criteria like if a certain index
+was used, and the support for machine-readable explain formats (e.g.  JSON,
+YAML) anticipates this.
+
 Supported PostgreSQL versions
 =============================
 
@@ -33,7 +41,8 @@ supported:
 9.2
 9.1
 
-Earlier versions may be supported if there is sufficient demand.
+Earlier versions may be supported if it becomes apparent that there is
+sufficient demand.
 
 Installation
 ============
@@ -309,6 +318,11 @@ output on an ad-hoc basis.
 pg_stat_plans.log_format selects the EXPLAIN output format to be used (i.e the
 format that will be returned by ``pg_stat_plans_explain()``). The allowed values
 are text, xml, json, and yaml. The default is text.
+
+``pg_stat_plans.verbose (boolean)``
+-----------------------------------
+pg_stat_plans.verbose specifies if explain output should be verbose (that is,
+equivalent to specifying VERBOSE with SQL EXPLAIN. The default is off.
 
 Limitations
 ===========

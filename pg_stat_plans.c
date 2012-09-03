@@ -202,6 +202,7 @@ static int	pgsp_track;			/* tracking level */
 static bool pgsp_save;			/* whether to save stats across shutdown */
 static bool pgsp_planid_notice;	/* whether to give planid NOTICE */
 static int	pgsp_explain_format;/* Format for pg_stat_plans_explain() */
+static bool	pgsp_verbose;		/* Should EXPLAIN be verbose? */
 static Oid	pgsp_planid = -1;	/* last planid explained for backend */
 
 #define pgsp_enabled() \
@@ -300,7 +301,8 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomBoolVariable("pg_stat_plans.save",
-							 "Save pg_stat_plans statistics across server shutdowns.",
+							 "Save pg_stat_plans statistics across server "
+							 "shutdowns.",
 							 NULL,
 							 &pgsp_save,
 							 true,
@@ -311,8 +313,8 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomBoolVariable("pg_stat_plans.planid_notice",
-							 "Raise notice of a plan's id after its execution. Useful for "
-							 "verifying explain output.",
+							 "Raise notice of a plan's id after its execution. "
+							 "Useful for verifying explain output.",
 							 NULL,
 							 &pgsp_planid_notice,
 							 false,
@@ -323,12 +325,25 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomEnumVariable("pg_stat_plans.log_format",
-							 "EXPLAIN format to be used for pg_stat_plans_explain().",
+							 "EXPLAIN format to be used for "
+							 "pg_stat_plans_explain().",
 							 NULL,
 							 &pgsp_explain_format,
 							 EXPLAIN_FORMAT_TEXT,
 							 format_options,
 							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("pg_stat_plans.verbose",
+							 "EXPLAIN verbosity to be used for "
+							 "pg_stat_plans_explain().",
+							 NULL,
+							 &pgsp_verbose,
+							 false,
+							 PGC_USERSET,
 							 0,
 							 NULL,
 							 NULL,
@@ -1266,9 +1281,9 @@ pgsp_explain(QueryDesc *queryDesc)
 	ExplainState es;
 
 	ExplainInitState(&es);
-	es.analyze = false;
-	es.verbose = false;
-	es.buffers = false;
+	/* It seems like just too much of a foot-gun to allow EXPLAIN ANALYZE */
+	es.buffers = es.analyze = false;
+	es.verbose = pgsp_verbose;
 	es.format = pgsp_explain_format;
 
 	ExplainBeginOutput(&es);
