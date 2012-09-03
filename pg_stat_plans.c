@@ -35,6 +35,7 @@
 
 #include "access/hash.h"
 #include "executor/instrument.h"
+#include "catalog/namespace.h"
 #include "commands/explain.h"
 #include "executor/spi.h"
 #include "funcapi.h"
@@ -86,7 +87,6 @@ typedef struct pgspHashKey
  */
 typedef struct Counters
 {
-	bool		query_valid;	/* was the query string invalidated? */
 	int64		calls;			/* # of times executed */
 	double		total_time;		/* total execution time, in msec */
 	int64		rows;			/* total # of retrieved or affected rows */
@@ -111,6 +111,8 @@ typedef struct pgspEntry
 	pgspHashKey key;			/* hash key of entry - MUST BE FIRST */
 	Counters	counters;		/* the statistics for this query */
 	int			query_len;		/* # of valid bytes in query string */
+	Oid			spath_xor;		/* XOR of search_path during first execution */
+	bool		query_valid;	/* was the query string invalidated? */
 	slock_t		mutex;			/* protects the counters only */
 	char		query[1];		/* VARIABLE LENGTH ARRAY - MUST BE LAST */
 	/* Note: the allocated length of query[] is actually pgsp->query_size */
@@ -153,6 +155,10 @@ static int	nested_level = 0;
 static char *explain_text = NULL;
 /* whether currently explaining query */
 static PGSPExplainLevel pgsp_explaining = PGSP_NO_EXPLAIN;
+/* current XOR'd search_path representation for backend */
+static Oid search_path_xor;
+/* Is search_path_xor initialized? */
+static bool search_path_xor_initialized = false;
 
 /* Saved hook values in case of unload */
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -160,6 +166,7 @@ static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static ExecutorRun_hook_type prev_ExecutorRun = NULL;
 static ExecutorFinish_hook_type prev_ExecutorFinish = NULL;
 static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
+static ProcessUtility_hook_type prev_ProcessUtility = NULL;
 
 /* Links to shared memory state */
 static pgspSharedState *pgsp = NULL;
@@ -194,7 +201,7 @@ static int	pgsp_max;			/* max # plans to track */
 static int	pgsp_track;			/* tracking level */
 static bool pgsp_save;			/* whether to save stats across shutdown */
 static bool pgsp_planid_notice;	/* whether to give planid NOTICE */
-static int	pgsp_explain_format = EXPLAIN_FORMAT_TEXT;
+static int	pgsp_explain_format;/* Format for pg_stat_plans_explain() */
 static Oid	pgsp_planid = -1;	/* last planid explained for backend */
 
 #define pgsp_enabled() \
@@ -224,12 +231,16 @@ static void pgsp_ExecutorRun(QueryDesc *queryDesc,
 							 long count);
 static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
+static void pgsp_ProcessUtility(Node *parsetree,
+			  const char *queryString, ParamListInfo params, bool isTopLevel,
+					DestReceiver *dest, char *completionTag);
 static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
 					   double total_time, uint64 rows,
 					   const BufferUsage *bufusage);
 static char *pgsp_explain(QueryDesc *queryDesc);
+static Oid	get_searchpath_xor(void);
 static Size pgsp_memsize(void);
 static pgspEntry *entry_alloc(pgspHashKey *key, const char *query,
 							  int query_len);
@@ -346,6 +357,8 @@ _PG_init(void)
 	ExecutorFinish_hook = pgsp_ExecutorFinish;
 	prev_ExecutorEnd = ExecutorEnd_hook;
 	ExecutorEnd_hook = pgsp_ExecutorEnd;
+	prev_ProcessUtility = ProcessUtility_hook;
+	ProcessUtility_hook = pgsp_ProcessUtility;
 }
 
 /*
@@ -360,6 +373,7 @@ _PG_fini(void)
 	ExecutorRun_hook = prev_ExecutorRun;
 	ExecutorFinish_hook = prev_ExecutorFinish;
 	ExecutorEnd_hook = prev_ExecutorEnd;
+	ProcessUtility_hook = ProcessUtility_hook;
 }
 
 /*
@@ -671,6 +685,21 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	Oid planId = 0;
 
+	if (!search_path_xor_initialized)
+	{
+		/* Initialize search_path_xor */
+		search_path_xor = get_searchpath_xor();
+
+		/*
+		 * XXX: search_path might get changed within postgresql.conf, without a
+		 * restart, and we'd have the wrong idea about our current search_path.
+		 *
+		 * There doesn't appear to be a better-principled approach that can be
+		 * used while taretin back-branches, though.
+		 */
+		search_path_xor_initialized = true;
+	}
+
 	if (queryDesc->totaltime && (pgsp_enabled() || pgsp_explaining))
 	{
 		pgspJumbleState	jstate;
@@ -726,6 +755,41 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		prev_ExecutorEnd(queryDesc);
 	else
 		standard_ExecutorEnd(queryDesc);
+}
+
+/*
+ * ProcessUtility hook
+ *
+ * Unlike pg_stat_statements, pg_stat_plans doesn't care about non-optimizable
+ * statements (i.e. most utility statements).
+ *
+ * However, this is how we try and monitor if search_path is set by
+ * applications, to enforce that the original query execution's search_path
+ * matches our own when EXPLAINING stored query text. This is obviously
+ * a klude, but it seems to be the only mechanism available to do this.
+ */
+static void
+pgsp_ProcessUtility(Node *parsetree, const char *queryString,
+					ParamListInfo params, bool isTopLevel,
+					DestReceiver *dest, char *completionTag)
+{
+	if (prev_ProcessUtility)
+		prev_ProcessUtility(parsetree, queryString, params,
+							isTopLevel, dest, completionTag);
+	else
+		standard_ProcessUtility(parsetree, queryString, params,
+								isTopLevel, dest, completionTag);
+
+	if (IsA(parsetree, VariableSetStmt))
+	{
+		VariableSetStmt *v = (VariableSetStmt *) parsetree;
+
+		if (strcmp(v->name, "search_path") == 0)
+		{
+			/* search_path changed - update current search_path for backend. */
+			search_path_xor = get_searchpath_xor();
+		}
+	}
 }
 
 /*
@@ -842,7 +906,7 @@ pgsp_store(const char *query, Oid planId,
 		SpinLockRelease(&e->mutex);
 	}
 
-	if (!entry->counters.query_valid)
+	if (!entry->query_valid)
 	{
 		/*
 		 * Entry was previously found to have a query string that no longer
@@ -875,7 +939,9 @@ pgsp_store(const char *query, Oid planId,
 
 			memcpy(entry->query, query, query_len);
 			entry->query[query_len] = '\0';
-			entry->counters.query_valid = true;
+			entry->query_valid = true;
+			/* search_path may have changed since original execution */
+			entry->spath_xor = search_path_xor;
 		}
 
 		LWLockRelease(pgsp->lock);
@@ -903,7 +969,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 16
+#define PG_STAT_PLAN_COLS 17
 
 /*
  * Retrieve plan statistics.
@@ -984,6 +1050,11 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		else
 			values[i++] = CStringGetTextDatum("<insufficient privilege>");
 
+		/* Did original search_path matches that of current client? */
+		values[i++] = BoolGetDatum(entry->spath_xor == search_path_xor);
+		/* Will query reproduce this plan, last we checked? */
+		values[i++] = BoolGetDatum(entry->query_valid);
+
 		/* copy counters to a local variable to keep locking time short */
 		{
 			volatile pgspEntry *e = (volatile pgspEntry *) entry;
@@ -993,7 +1064,6 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 			SpinLockRelease(&e->mutex);
 		}
 
-		values[i++] = BoolGetDatum(entry->counters.query_valid);
 		values[i++] = Int64GetDatumFast(tmp.calls);
 		values[i++] = Float8GetDatumFast(tmp.total_time);
 		values[i++] = Int64GetDatumFast(tmp.rows);
@@ -1048,6 +1118,12 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	if (pgsp_explaining)
 		elog(ERROR, "recursive call to pg_stat_plans_explain.");
 
+	if (key.dbid != MyDatabaseId)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("pg_stat_plans cannot explain query from another "
+						"database")));
+
 	/* Lookup the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
 
@@ -1061,7 +1137,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
-		/* we rely on the assumption that this is NULL-terminated: */
+		/* Rely on the assumption that this will be NULL-terminated for us: */
 		appendBinaryStringInfo(&query, entry->query, entry->query_len);
 		LWLockRelease(pgsp->lock);
 
@@ -1092,16 +1168,36 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		{
 			/* explain_text was set in SPI call - return it to our caller now */
 			Size	len = strlen(explain_text);
+			Oid		cur_sp_xor =  get_searchpath_xor();
 
 			if (pgsp_planid != planid)
 			{
 				/* Warn user of differing plans for the entry */
 				StringInfoData err;
-				initStringInfo(&err);
-				appendStringInfo(&err, "***** Existing entry's planid (%u) "
-								 "and explain of original SQL query "
-								 "string planid (%u) differ "
-								 "*****\n", planid, pgsp_planid);
+
+				/*
+				 * If search_path differed, assume the relations differ, and
+				 * ERROR rather than just WARNING
+				 */
+				if (entry->spath_xor != cur_sp_xor)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_SCHEMA_NAME),
+							 errmsg("current search_path does not match that for "
+									"original execution of query originally "
+									"produced planid %u. Furthermore, plans "
+									"for both queries differ(The new planid "
+									"is %u), very probably due to each plan "
+									"referencing what are technically distinct "
+									"relations.", planid, pgsp_planid),
+							 errhint("make search_path setting match that used "
+									 "during original originating query's "
+									 "execution")));
+
+						initStringInfo(&err);
+						appendStringInfo(&err, "***** Existing entry's planid (%u) "
+										 "and explain of original SQL query "
+										 "string planid (%u) differ "
+										 "*****\n", planid, pgsp_planid);
 
 				result = palloc(err.len + len + VARHDRSZ);
 				SET_VARSIZE(result, err.len + len + VARHDRSZ);
@@ -1109,7 +1205,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				memcpy(VARDATA(result) + err.len, explain_text, len);
 
 				/* Invalidate query iff necessary */
-				if (entry->counters.query_valid)
+				if (entry->query_valid)
 				{
 					/* Log when first observed for the entry */
 					ereport(WARNING,
@@ -1119,15 +1215,11 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 										planid, pgsp_planid)));
 
 					/* Update hashtable to invalidate query string */
-					LWLockAcquire(pgsp->lock, LW_SHARED);
+					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
-					{
-						volatile pgspEntry *e = entry;
-						SpinLockAcquire(&e->mutex);
-						e->counters.query_valid = false;
-						SpinLockRelease(&e->mutex);
-					}
+					if (entry)
+						entry->query_valid = false;
 
 					LWLockRelease(pgsp->lock);
 				}
@@ -1197,6 +1289,35 @@ pgsp_explain(QueryDesc *queryDesc)
 
 	/* Caller should free this buffer */
 	return es.str->data;
+}
+
+/*
+ * get_searchpath_xor: Returns an Oid that is a XOR'd together value of the
+ * current search_path's pg_namespace Oids.
+ *
+ * Note: fetch_search_path() call may result in a CommandCounterIncrement
+ * operation.
+ */
+static Oid
+get_searchpath_xor(void)
+{
+	bool		 skip_first = true;
+	List		*search_path = fetch_search_path(false);
+	Oid			 res = linitial_oid(search_path);
+	ListCell	*lc;
+
+	foreach(lc, search_path)
+	{
+		if (skip_first)
+		{
+			skip_first = false;
+			continue;
+		}
+		res ^= lfirst_oid(lc);
+	}
+
+	pfree(search_path);
+	return res;
 }
 
 /*
@@ -1299,7 +1420,7 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 		/* set the appropriate initial usage count */
 		entry->counters.usage = USAGE_INIT;
 		/* query string starts out valid */
-		entry->counters.query_valid = true;
+		entry->query_valid = true;
 		/* re-initialize the mutex each time ... we assume no one using it */
 		SpinLockInit(&entry->mutex);
 		/* ... and don't forget the query text */
@@ -1307,6 +1428,8 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 		entry->query_len = query_len;
 		memcpy(entry->query, query, query_len);
 		entry->query[query_len] = '\0';
+		/* record search_path */
+		entry->spath_xor = search_path_xor;
 	}
 
 	return entry;

@@ -135,6 +135,8 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | query               | text             | Text of the first statement (up to track_activity_query_size bytes) |
 +---------------------+------------------+---------------------------------------------------------------------+
+| had_our_search_path | boolean          | indicates if query strings execution's search_path matches current  |
++---------------------+------------------+---------------------------------------------------------------------+
 | query_valid         | boolean          | indicates if query column text now produces same plan               |
 +---------------------+------------------+---------------------------------------------------------------------+
 | calls               | bigint           | Number of times executed                                            |
@@ -176,7 +178,7 @@ pg_stat_plans_reset function
 Can be called by superusers to reset the contents of the pg_stat_plans view
 (and, by extension, all others views based on it)::
 
- pg_stat_plans_reset() -- no arguments should be given
+ pg_stat_plans_reset()
 
 pg_stat_plans_explain function
 ------------------------------
@@ -269,11 +271,50 @@ described below:
 | time_stddev         | double    | Stddev of average execution times for each plan.              |
 +---------------------+-----------+---------------------------------------------------------------+
 
+Configuration Parameters
+========================
+
+pg_stat_plans adds the following configuration parameters:
+
+``pg_stat_plans.max (integer)``
+-------------------------------
+pg_stat_plans.max is the maximum number of plans tracked by the module (i.e.,
+the maximum number of rows in the pg_stat_plans view). If more distinct plans
+than that are observed, information about the least-executed statements is
+discarded. The default value is 1000. This parameter can only be set at server
+start.
+
+``pg_stat_plans.track (enum)``
+------------------------------
+pg_stat_plans.track controls which statements' plans are counted by the module.
+Specify top to track top-level statements (those issued directly by clients),
+all to also track nested statements (such as statements invoked within
+functions), or none to disable plan statistics collection. The default
+value is top. Only superusers can change this setting.
+
+``pg_stat_plans.save (boolean)``
+--------------------------------
+pg_stat_plans.save specifies whether to save plan statistics across server
+shutdowns. If it is off then statistics are not saved at shutdown nor reloaded
+at server start. The default value is on. This parameter can only be set in the
+postgresql.conf file or on the server command line.
+
+``pg_stat_plans.planid_notice (boolean)``
+-----------------------------------------
+Raise notice of a plan's id after its execution. Useful for verifying explain
+output on an ad-hoc basis.
+
+``pg_stat_plans.log_format (enum)``
+-----------------------------------
+pg_stat_plans.log_format selects the EXPLAIN output format to be used (i.e the
+format that will be returned by ``pg_stat_plans_explain()``). The allowed values
+are text, xml, json, and yaml. The default is text.
+
 Limitations
 ===========
 
 Plan fingerprinting
-~~~~~~~~~~~~~~~~~~~
+-------------------
 
 pg_stat_plans works by hashing query plans. While that makes it more useful than
 Postgres 9.2's pg_stat_statements in some respects (it is possible to directly
@@ -297,17 +338,35 @@ However, the module can differentiate between these queries just fine::
   select upper(upper(firstname)) from customers;
 
 Explaining stored query text
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+----------------------------
 
 No particular effort is made by the module to ensure that it can explain a
 truncated query text. If you run pg_stat_plans_explain on an entry whose query
 text exceeds ``track_activity_query_size``, a syntax error may result. In fact,
 it's possible (though quite unlikely) that there *will not* be a syntax error,
 and an entirely distinct query will be explained, leading to a misrepresentation
-of query execution costs.
+of plan execution costs.
 
-Possibility of hash collisions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pg_stat_plans EXPLAINs plans using a standard interface with the stored query
+text. It makes no particular attempt to deal with prepared statements correctly
+when explaining.
+
+The query text may not adequately represent the originating query for each plan.
+In particular, inconsistently setting the ``search_path`` setting may allow what
+appears to be the same query to be misidentified as another query referring to
+what are technical other relations. This isn't at all unreasonable, since
+"schema naivety" is encouraged in application code. For that reason, a
+fingerprint of the search_path setting is stored with each pg_stat_plans entry.
+
+The module will produce an error in the event of trying to call
+pg_stat_plans_explain function (which rather straightforwardly explains the
+stored query text of the originating query's execution) with a different
+``search_path`` setting to that used for the original execution. The
+``had_our_search_path`` column of the pg_stat_plans view indicates if this will
+happen for the entry should the function be called.
+
+Possibility of hash collisions, stability of planids
+----------------------------------------------------
 
 pg_stat_plans inherits some limitations from pg_stat_statements. In some cases,
 plans that have significantly different query texts might get merged into a
@@ -316,3 +375,20 @@ substantively equivalent, but there is a small chance of hash collisions causing
 unrelated plans to be merged into one entry (that is, for their ``planid`` value
 to match despite the differences). However, this cannot happen with plans that
 belong to different users or databases.
+
+pg_stat_plans fingerprints plans in a way that is sensitive to implementation
+details like machine endian-ness, as well as the values of internal object
+identifiers. For that reason, it should not be assumed that planids can be used
+to identify plans across servers participating in *logical* replication of the
+same database, or that planids will be consistent across a dump and reload
+cycle, or Postgres versions. However, planids will be consistent when using
+physical replication (that is, streaming replication) or physical backups.
+
+It is a goal of pg_stat_plans to facilitate the aggregation of statistics by
+third-party tools based on using planids as persistent identifiers. For that
+reason, but also because an internal "version-bump" that invalidates all
+existing entries is best avoided, the author will strive to keep the
+fingerprinting logic that produces planids stable across releases. However, it
+is *not* guaranteed that planids will be consistent across versions of
+pg_stat_plans, mostly because it is conceivable that the internal representation
+of plans will be altered in a point-release of Postgres.
