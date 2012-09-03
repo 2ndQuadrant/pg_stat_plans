@@ -110,4 +110,4 @@ GRANT SELECT ON pg_stat_plans_queries TO PUBLIC;
 
 -- Don't want these to be available to non-superusers.
 REVOKE ALL ON FUNCTION pg_stat_plans_reset() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pg_stat_plans_pprint() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pg_stat_plans_pprint(text) FROM PUBLIC;
