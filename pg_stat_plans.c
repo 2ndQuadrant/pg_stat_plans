@@ -1272,7 +1272,6 @@ pgsp_explain(QueryDesc *queryDesc)
 	es.format = pgsp_explain_format;
 
 	ExplainBeginOutput(&es);
-	ExplainQueryText(&es, queryDesc);
 	ExplainPrintPlan(&es, queryDesc);
 	ExplainEndOutput(&es);
 
