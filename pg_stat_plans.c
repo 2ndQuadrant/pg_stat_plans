@@ -324,7 +324,7 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	DefineCustomEnumVariable("pg_stat_plans.log_format",
+	DefineCustomEnumVariable("pg_stat_plans.explain_format",
 							 "EXPLAIN format to be used for "
 							 "pg_stat_plans_explain().",
 							 NULL,

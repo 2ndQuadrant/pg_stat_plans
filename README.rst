@@ -313,11 +313,11 @@ postgresql.conf file or on the server command line.
 Raise notice of a plan's id after its execution. Useful for verifying explain
 output on an ad-hoc basis.
 
-``pg_stat_plans.log_format (enum)``
+``pg_stat_plans.explain_format (enum)``
 -----------------------------------
-pg_stat_plans.log_format selects the EXPLAIN output format to be used (i.e the
-format that will be returned by ``pg_stat_plans_explain()``). The allowed values
-are text, xml, json, and yaml. The default is text.
+pg_stat_plans.explain_format selects the EXPLAIN output format to be used (i.e
+the format that will be returned by ``pg_stat_plans_explain()``). The allowed
+values are text, xml, json, and yaml. The default is text.
 
 ``pg_stat_plans.verbose (boolean)``
 -----------------------------------
