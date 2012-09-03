@@ -17,7 +17,9 @@ plans between calls here.
 
 Since we are testing the hashing of plans, it is necessary to run the tests
 with a stock postgresql.conf. You should also run ANALYZE manually after
-restoring the dellstore database.
+restoring the dellstore database. These tests are no so sophisticated that we
+write them with a particular query plan in mind, but we should still apply a
+consistent standard insofar as possible.
 """
 
 import psycopg2
@@ -151,10 +153,10 @@ def test_assert(assertion, conn):
     global test_no
     global failures
     if not assertion:
-        raise SystemExit("Assertion (test {0}) failed!\n".format(test_no))
         failures += 1
+        sys.stderr.write("Assertion (test {0}) failed!\n\n".format(test_no))
 
-    print """Assertion is true.\n\nTest {0} passed.\n\n """.format(test_no)
+    print """Assertion good.Test {0} passed.\n\n """.format(test_no)
     test_no += 1
 
 
@@ -1164,7 +1166,7 @@ def main():
 
     cur.execute("""
     select calls from pg_stat_plans where query ilike
-    '%else foo%';""")
+    '%else bar%';""")
     for i in cur:
         test_assert(i[0] == 6, conn)
 

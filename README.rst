@@ -221,8 +221,7 @@ Usage example::
  postgres=# select pg_stat_plans_explain(planid, userid, dbid), planid from
   pg_stat_plans;
  -[ RECORD 1 ]---------+--------------------------------------------------
- pg_stat_plans_explain | Query Text: EXPLAIN select pg_stat_plans_reset();
-                       | Result  (cost=0.00..0.01 rows=1 width=0)
+ pg_stat_plans_explain | Result  (cost=0.00..0.01 rows=1 width=0)
  planid                | 2721250187
 
 Internally, the function simply executes an ``EXPLAIN`` (*not* an ``EXPLAIN

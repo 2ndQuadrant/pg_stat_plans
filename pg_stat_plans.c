@@ -241,7 +241,7 @@ static void pgsp_store(const char *query, Oid planId,
 					   double total_time, uint64 rows,
 					   const BufferUsage *bufusage);
 static char *pgsp_explain(QueryDesc *queryDesc);
-static Oid	get_searchpath_xor(void);
+static Oid	get_search_path_xor(void);
 static Size pgsp_memsize(void);
 static pgspEntry *entry_alloc(pgspHashKey *key, const char *query,
 							  int query_len);
@@ -620,6 +620,25 @@ error:
 static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+	if (!search_path_xor_initialized)
+	{
+		/* Initialize search_path_xor */
+		search_path_xor = get_search_path_xor();
+
+		/*
+		 * XXX: search_path might get changed within postgresql.conf, without a
+		 * restart, and we'd have the wrong idea about our current search_path.
+		 *
+		 * There doesn't appear to be a better-principled approach that can be
+		 * used while taretin back-branches, though.
+		 *
+		 * Do this here so that if the first query the backend executes queries
+		 * the pg_stat_plans_explain function, it will still see that
+		 * search_path matches.
+		 */
+		search_path_xor_initialized = true;
+	}
+
 	if (pgsp_explaining)
 		queryDesc->instrument_options |= INSTRUMENT_TIMER;
 
@@ -699,21 +718,6 @@ static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	Oid planId = 0;
-
-	if (!search_path_xor_initialized)
-	{
-		/* Initialize search_path_xor */
-		search_path_xor = get_searchpath_xor();
-
-		/*
-		 * XXX: search_path might get changed within postgresql.conf, without a
-		 * restart, and we'd have the wrong idea about our current search_path.
-		 *
-		 * There doesn't appear to be a better-principled approach that can be
-		 * used while taretin back-branches, though.
-		 */
-		search_path_xor_initialized = true;
-	}
 
 	if (queryDesc->totaltime && (pgsp_enabled() || pgsp_explaining))
 	{
@@ -802,7 +806,7 @@ pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 		if (strcmp(v->name, "search_path") == 0)
 		{
 			/* search_path changed - update current search_path for backend. */
-			search_path_xor = get_searchpath_xor();
+			search_path_xor = get_search_path_xor();
 		}
 	}
 }
@@ -1131,7 +1135,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	key.planid = planid;
 
 	if (pgsp_explaining)
-		elog(ERROR, "recursive call to pg_stat_plans_explain.");
+		elog(ERROR, "recursive call to pg_stat_plans_explain");
 
 	if (key.dbid != MyDatabaseId)
 		ereport(ERROR,
@@ -1183,7 +1187,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		{
 			/* explain_text was set in SPI call - return it to our caller now */
 			Size	len = strlen(explain_text);
-			Oid		cur_sp_xor =  get_searchpath_xor();
+			Oid		cur_sp_xor =  get_search_path_xor();
 
 			if (pgsp_planid != planid)
 			{
@@ -1306,14 +1310,14 @@ pgsp_explain(QueryDesc *queryDesc)
 }
 
 /*
- * get_searchpath_xor: Returns an Oid that is a XOR'd together value of the
+ * get_search_path_xor: Returns an Oid that is a XOR'd together value of the
  * current search_path's pg_namespace Oids.
  *
  * Note: fetch_search_path() call may result in a CommandCounterIncrement
  * operation.
  */
 static Oid
-get_searchpath_xor(void)
+get_search_path_xor(void)
 {
 	bool		 skip_first = true;
 	List		*search_path = fetch_search_path(false);
@@ -1587,7 +1591,9 @@ JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan)
 	JumbleRangeTable(jstate, plan->rtable);
 	JumbleExpr(jstate, (Node *) plan->resultRelations);
 	JumbleExpr(jstate, (Node *) plan->utilityStmt);
+#if PG_VERSION_NUM < 90200
 	JumbleExpr(jstate, (Node *) plan->intoClause);
+#endif
 	JumbleExpr(jstate, (Node *) plan->subplans);
 	JumbleExpr(jstate, (Node *) plan->rewindPlanIDs);
 	JumbleExpr(jstate, (Node *) plan->rowMarks);
@@ -2189,6 +2195,21 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				APP_JUMB(is->indexorderdir);
 			}
 			break;
+#if PG_VERSION_NUM >= 90200
+		case T_IndexOnlyScan:
+			{
+				IndexOnlyScan *ios = (IndexOnlyScan*) node;
+				JumbleExpr(jstate, (Node *) ios->indexorderby);
+				JumbleExpr(jstate, (Node *) ios->indexqual);
+				JumbleExpr(jstate, (Node *) ios->indextlist);
+				APP_JUMB(ios->indexid);
+				APP_JUMB(ios->indexorderdir);
+
+				JumbleScanHeader(jstate, &ios->scan);
+
+			}
+			break;
+#endif
 		case T_BitmapIndexScan:
 			{
 				BitmapIndexScan *bis = (BitmapIndexScan *) node;
@@ -2269,11 +2290,13 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleScanHeader(jstate, &fs->scan);
 			}
 			break;
+#if PG_VERSION_NUM < 90200
 		case T_FdwPlan:
 			{
 				/* TODO: Something. No such struct. */
 			}
 			break;
+#endif
 		case T_Join:
 			{
 				Join *j = (Join *) node;
@@ -2415,7 +2438,12 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_PlanInvalItem:
 			{
 				PlanInvalItem *pii = (PlanInvalItem*) node;
+#if PG_VERSION_NUM < 90200
 				APP_JUMB(pii->tupleId);
+#else
+				APP_JUMB(pii->cacheId);
+				APP_JUMB(pii->hashValue);
+#endif
 			}
 			break;
 			/* Non-plan nodes that are known to appear in plannedStmts: */
