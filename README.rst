@@ -379,8 +379,15 @@ and an entirely distinct query will be explained, leading to a misrepresentation
 of plan execution costs.
 
 pg_stat_plans EXPLAINs plans using a standard interface with the stored query
-text. It makes no particular attempt to deal with prepared statements correctly
-when explaining.
+text. Since there is no way to explain the stored query text of a query prepared
+using ``PQPrepare()``, there is no reasonable way to handle that case, and it is
+not supported. If the query string had PARAM placeholder tokens replaced with
+actual textual constants, this would still not result in an equivalent query
+plan, at least as far as our fingerprinting is concerned. This isn't a serious
+limitation, since presumably those that are particularly concerned about planner
+regressions don't use prepared statements. Note that pg_stat_plans will assign
+execution costs to these prepared statement plans just as readily as any other
+type of plan.
 
 The query text may not adequately represent the originating query for each plan.
 In particular, inconsistently setting the ``search_path`` setting may allow what

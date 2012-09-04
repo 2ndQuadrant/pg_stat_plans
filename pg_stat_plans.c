@@ -65,6 +65,9 @@ static const uint32 PGSP_FILE_HEADER = 0x20120328;
 #define USAGE_DECREASE_FACTOR	(0.99)	/* decreased every entry_dealloc */
 #define JUMBLE_SIZE				1024	/* plan jumble size */
 #define USAGE_DEALLOC_PERCENT	5		/* free this % of entries at once */
+/* pgsp entry state flags */
+#define PGSP_VALID			(1 << 0)	/* String produces same plan */
+#define PGSP_PREPARED		(1 << 1)	/* Entry from prepared query */
 
 /*
  * Hashtable key that defines the identity of a hashtable entry.  We separate
@@ -112,7 +115,7 @@ typedef struct pgspEntry
 	Counters	counters;		/* the statistics for this query */
 	int			query_len;		/* # of valid bytes in query string */
 	Oid			spath_xor;		/* XOR of search_path during first execution */
-	bool		query_valid;	/* was the query string invalidated? */
+	char		query_flags;	/* Flags for query (validity, etc) */
 	slock_t		mutex;			/* protects the counters only */
 	char		query[1];		/* VARIABLE LENGTH ARRAY - MUST BE LAST */
 	/* Note: the allocated length of query[] is actually pgsp->query_size */
@@ -254,7 +257,7 @@ static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
 					   double total_time, uint64 rows,
-					   const BufferUsage *bufusage);
+					   const BufferUsage *bufusage, bool prepared);
 static char *pgsp_explain(QueryDesc *queryDesc);
 static Oid	get_search_path_xor(void);
 static Size pgsp_memsize(void);
@@ -668,9 +671,10 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		/*
 		 * XXX: search_path might get changed within postgresql.conf, without a
 		 * restart, and we'd have the wrong idea about our current search_path.
+		 * We don't even support search_path protection on Postgres 9.0.
 		 *
 		 * There doesn't appear to be a better-principled approach that can be
-		 * used while taretin back-branches, though.
+		 * used while targeting back-branches, though.
 		 *
 		 * Do this here so that if the first query the backend executes queries
 		 * the pg_stat_plans_explain function, it will still see that
@@ -680,7 +684,6 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 	Assert(search_path_xor != 0);
 #endif
-
 
 	if (pgsp_explaining)
 		queryDesc->instrument_options |= INSTRUMENT_TIMER;
@@ -790,7 +793,8 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 				   planId,
 				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
 				   queryDesc->estate->es_processed,
-				   &queryDesc->totaltime->bufusage);
+				   &queryDesc->totaltime->bufusage,
+				   queryDesc->params != NULL);
 
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
@@ -825,7 +829,6 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		standard_ExecutorEnd(queryDesc);
 }
 
-#if PG_VERSION_NUM >= 90100
 /*
  * ProcessUtility hook
  *
@@ -837,6 +840,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
  * matches our own when explaining stored query text. This is obviously
  * a kludge, but it seems to be the only mechanism available to do this.
  */
+#if PG_VERSION_NUM >= 90100
 static void
 pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 					ParamListInfo params,
@@ -916,7 +920,7 @@ pgsp_match_fn(const void *key1, const void *key2, Size keysize)
 static void
 pgsp_store(const char *query, Oid planId,
 		   double total_time, uint64 rows,
-		   const BufferUsage *bufusage)
+		   const BufferUsage *bufusage, bool prepared)
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
@@ -964,6 +968,9 @@ pgsp_store(const char *query, Oid planId,
 		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 
 		entry = entry_alloc(&key, query, query_len);
+
+		if (prepared)
+			entry->query_flags |= PGSP_PREPARED;
 	}
 
 	/* Increment the counts */
@@ -992,7 +999,7 @@ pgsp_store(const char *query, Oid planId,
 		SpinLockRelease(&e->mutex);
 	}
 
-	if (!entry->query_valid)
+	if ((entry->query_flags & PGSP_VALID) == 0)
 	{
 		/*
 		 * Entry was previously found to have a query string that no longer
@@ -1025,7 +1032,7 @@ pgsp_store(const char *query, Oid planId,
 
 			memcpy(entry->query, query, query_len);
 			entry->query[query_len] = '\0';
-			entry->query_valid = true;
+			entry->query_flags |= PGSP_VALID;
 			/* search_path may have changed since original execution */
 #if PG_VERSION_NUM >= 90100
 			entry->spath_xor = search_path_xor;
@@ -1144,12 +1151,12 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 #if PG_VERSION_NUM >= 90100
 		values[i++] = BoolGetDatum(entry->spath_xor == search_path_xor);
 #else
-		values[i++] = BoolGetDatum(false);
 		/* No support for this on 9.0, so just make it NULL */
-		nulls[i - 1] = true;
+		nulls[i] = true;
+		values[i++] = BoolGetDatum(false);
 #endif
 		/* Will query reproduce this plan, last we checked? */
-		values[i++] = BoolGetDatum(entry->query_valid);
+		values[i++] = BoolGetDatum(entry->query_flags & PGSP_VALID);
 
 		/* copy counters to a local variable to keep locking time short */
 		{
@@ -1225,6 +1232,15 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 	entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
+	if (entry->query_flags & PGSP_PREPARED)
+	{
+		LWLockRelease(pgsp->lock);
+		ereport(NOTICE,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("Cannot explain prepared query (planid: %u)", planid)));
+		PG_RETURN_NULL();
+	}
+
 	if (entry)
 	{
 		/* Obtain query string for explain */
@@ -1289,11 +1305,11 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 									 "during original originating query's "
 									 "execution")));
 
-						initStringInfo(&err);
-						appendStringInfo(&err, "***** Existing entry's planid (%u) "
-										 "and explain of original SQL query "
-										 "string planid (%u) differ "
-										 "*****\n", planid, pgsp_planid);
+				initStringInfo(&err);
+				appendStringInfo(&err, "***** Existing entry's planid (%u) "
+								 "and explain of original SQL query "
+								 "string planid (%u) differ "
+								 "*****\n", planid, pgsp_planid);
 
 				result = palloc(err.len + len + VARHDRSZ);
 				SET_VARSIZE(result, err.len + len + VARHDRSZ);
@@ -1301,7 +1317,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				memcpy(VARDATA(result) + err.len, explain_text, len);
 
 				/* Invalidate query iff necessary */
-				if (entry->query_valid)
+				if (entry->query_flags & PGSP_VALID)
 				{
 					/* Log when first observed for the entry */
 					ereport(WARNING,
@@ -1315,7 +1331,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
 					if (entry)
-						entry->query_valid = false;
+						entry->query_flags &= ~PGSP_VALID;
 
 					LWLockRelease(pgsp->lock);
 				}
@@ -1514,8 +1530,8 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 		memset(&entry->counters, 0, sizeof(Counters));
 		/* set the appropriate initial usage count */
 		entry->counters.usage = USAGE_INIT;
-		/* query string starts out valid */
-		entry->query_valid = true;
+		/* query string starts out valid, could need more flags though */
+		entry->query_flags = PGSP_VALID;
 		/* re-initialize the mutex each time ... we assume no one using it */
 		SpinLockInit(&entry->mutex);
 		/* ... and don't forget the query text */
