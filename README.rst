@@ -38,25 +38,18 @@ pg_stat_plans strives to support as many community-supported major versions of
 Postgres as possible. Currently, the following versions of PostgreSQL are
 supported:
 
-9.2
-9.1
+9.0 (see notes on search_path), 9.1, 9.2
 
-Earlier versions may be supported if it becomes apparent that there is
-sufficient demand.
+9.3-devel is unsupported, but we strive to build cleanly against it in
+anticipation of supporting it as soon as that's useful.
 
 Installation
 ============
-
-There are two basic approaches to building pg_stat_plans from source.
 
 The module can be built using the standard PGXS infrastructure. For this to
 work, you will need to have the ``pg_config`` program available in your $PATH. When
 using the PGDG Redhat RPMs, you will need to install a separate package to have
 this available.
-
-You may also wish to build pg_stat_plans using a full PostgreSQL source code
-tree. This is generally only desirable if you're installing PostgreSQL from
-source.
 
 Using PGXS
 ----------
@@ -65,11 +58,10 @@ If you are using a packaged PostgreSQL build and have ``pg_config`` available
 (and in your OS user's $PATH), the procedure is as follows::
 
   tar xvzf pg_stat_plans-1.0.tar.gz
-  cd pg_stat_plans
-  make USE_PGXS=1
-  make USE_PGXS=1 install
-
-This is the preferred method of building pg_stat_plans for production use.
+  ...
+  cd pg_stat_plans-1.0
+  make
+  make install
 
 See below for building notes specific to Redhat Linux variants.
 
@@ -77,21 +69,8 @@ Note that just because ``pg_config`` is located in one user's $PATH does not
 necessarily make it so for the root user. A workaround is described below,
 at the end of the Redhat notes.
 
-Using a PostgreSQL source code tree
------------------------------------
-
-With this method, the pg_stat_plans code is copied into the PostgreSQL tree.
-
-The resulting subdirectory should be named ``contrib/pg_stat_plans``, without any
-version number::
-
-  cp pg_stat_plans-1.0.tar.gz ${postgresql_sources}/contrib
-  cd ${postgresql_sources}/contrib
-  tar xzvf pg_stat_plans-1.0.tar.gz
-  mv pg_stat_plans-1.0 pg_stat_plans
-  cd pg_stat_plans
-  make
-  make install
+The pg_stat_plans module must be created in PostgreSQL. See "setting up
+PostgreSQL", below.
 
 Notes on RedHat Linux, Fedora, and CentOS Builds
 ------------------------------------------------
@@ -120,11 +99,50 @@ The following invocation of ``make`` works around this issue::
 
   sudo PATH="/usr/pgsql-9.1/bin:$PATH" make USE_PGXS=1 install
 
+Setting up PostgreSQL
+---------------------
+
+The module requires additional shared memory amounting to about
+pg_stat_plans.max * track_activity_query_size bytes. Note that this memory is
+consumed whenever the module is loaded, even if pg_stat_statements.track is set
+to none.
+
+It is necessary to change a setting in postgresql.conf. The module must be loaded
+by adding pg_stat_plans to shared_preload_libraries in postgresql.conf, because
+it requires additional shared memory. This means that a server restart is needed
+to add or remove the module. Typical usage might be::
+
+  # postgresql.conf
+  shared_preload_libraries = 'pg_stat_statements'
+  # Optionally:
+  pg_stat_plans.max = 10000
+  pg_stat_plans.track = all
+
+Note that if necessary, pg_stat_plans can co-exist with pg_stat_statements.
+However, the redundant fingerprinting of queries may impose an unreasonable
+overhead.
+
+pg_stat_plans objects must be installed in every database that they are
+required. It uses the PostgreSQL extension mechanism where available. To install
+on PostgreSQL versions 9.1+, execute the following SQL command::
+
+  mydb=# CREATE EXTENSION pg_stat_plans;
+
+Earlier releases (that lack the extension mechanism - in practice, this is
+limited to version 9.0) must create the extension by executing the SQL script
+directly::
+
+  psql mydb -f pg_stat_plans.sql
+
 Usage
 =====
 
 pg_stat_plans, once installed, creates the following objects (plus a few others
-that are not intended to be used by the user directly):
+that are not intended to be used by the user directly).
+
+For security reasons, non-superusers are not allowed to see the text of queries
+executed by other users. They can see the statistics, however, if the view has
+been installed in their database.
 
 pg_stat_plans view
 ------------------
@@ -376,7 +394,9 @@ pg_stat_plans_explain function (which rather straightforwardly explains the
 stored query text of the originating query's execution) with a different
 ``search_path`` setting to that used for the original execution. The
 ``had_our_search_path`` column of the pg_stat_plans view indicates if this will
-happen for the entry should the function be called.
+happen for the entry should the function be called. Note, however, that due to a
+technical limitation, support for this is not available for PostgreSQL 9.0, and
+on that version the ``had_our_search_path`` column will always be NULL.
 
 Possibility of hash collisions, stability of planids
 ----------------------------------------------------

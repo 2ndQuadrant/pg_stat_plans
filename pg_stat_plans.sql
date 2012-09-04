@@ -1,7 +1,6 @@
-/* pg_stat_plans/pg_stat_plans--1.0.sql */
-
--- complain if script is sourced in psql, rather than via CREATE EXTENSION
-\echo Use "CREATE EXTENSION pg_stat_plans" to load this file. \quit
+--
+-- pg_stat_plans.sql
+--
 
 -- Originally from http://blog.ioguix.net/
 CREATE OR REPLACE FUNCTION normalize_query(IN TEXT, OUT TEXT) AS $body$
@@ -37,7 +36,7 @@ STRICT IMMUTABLE LANGUAGE SQL;
 -- Register functions.
 CREATE FUNCTION pg_stat_plans_reset()
 RETURNS void
-AS 'MODULE_PATHNAME'
+AS '$libdir/pg_stat_plans'
 LANGUAGE C;
 
 CREATE FUNCTION pg_stat_plans(
@@ -60,7 +59,7 @@ CREATE FUNCTION pg_stat_plans(
     OUT temp_blks_written int8
 )
 RETURNS SETOF record
-AS 'MODULE_PATHNAME'
+AS '$libdir/pg_stat_plans'
 LANGUAGE C;
 
 CREATE FUNCTION pg_stat_plans_explain(planid oid,
@@ -68,12 +67,12 @@ CREATE FUNCTION pg_stat_plans_explain(planid oid,
 							dbid oid default NULL,
 							encodingid oid default NULL)
 RETURNS TEXT
-AS 'MODULE_PATHNAME'
+AS '$libdir/pg_stat_plans'
 LANGUAGE C;
 
 CREATE FUNCTION pg_stat_plans_pprint(sqltext text)
 RETURNS TEXT
-AS 'MODULE_PATHNAME'
+AS '$libdir/pg_stat_plans'
 STRICT LANGUAGE C;
 
 -- Register a view on the function for ease of use.

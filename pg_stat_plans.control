@@ -1,5 +1,0 @@
-# pg_stat_plans extension
-comment = 'track execution statistics of all plans executed'
-default_version = '1.0'
-module_pathname = '$libdir/pg_stat_plans'
-relocatable = true

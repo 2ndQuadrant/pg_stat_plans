@@ -155,16 +155,20 @@ static int	nested_level = 0;
 static char *explain_text = NULL;
 /* whether currently explaining query */
 static PGSPExplainLevel pgsp_explaining = PGSP_NO_EXPLAIN;
+#if PG_VERSION_NUM >= 90100
 /* current XOR'd search_path representation for backend */
 static Oid search_path_xor = 0;
 /* Is search_path_xor initialized? */
 static bool search_path_xor_initialized = false;
+#endif
 
 /* Saved hook values in case of unload */
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static ExecutorRun_hook_type prev_ExecutorRun = NULL;
+#if PG_VERSION_NUM >= 90100
 static ExecutorFinish_hook_type prev_ExecutorFinish = NULL;
+#endif
 static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
 static ProcessUtility_hook_type prev_ProcessUtility = NULL;
 
@@ -230,8 +234,11 @@ static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgsp_ExecutorRun(QueryDesc *queryDesc,
 							 ScanDirection direction,
 							 long count);
+#if PG_VERSION_NUM >= 90100
 static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
+#endif
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
+#if PG_VERSION_NUM >= 90100
 static void pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 					ParamListInfo params,
 #if PG_VERSION_NUM < 90300
@@ -242,6 +249,7 @@ static void pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 					ProcessUtilityContext context
 #endif
 				   );
+#endif
 static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
@@ -292,8 +300,11 @@ _PG_init(void)
 							PGC_POSTMASTER,
 							0,
 							NULL,
-							NULL,
-							NULL);
+							NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
 
 	DefineCustomEnumVariable("pg_stat_plans.track",
 							 "Selects which plans are tracked by pg_stat_plans.",
@@ -304,8 +315,11 @@ _PG_init(void)
 							 PGC_SUSET,
 							 0,
 							 NULL,
-							 NULL,
-							 NULL);
+							 NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
 
 	DefineCustomBoolVariable("pg_stat_plans.save",
 							 "Save pg_stat_plans statistics across server "
@@ -316,8 +330,11 @@ _PG_init(void)
 							 PGC_SIGHUP,
 							 0,
 							 NULL,
-							 NULL,
-							 NULL);
+							 NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
 
 	DefineCustomBoolVariable("pg_stat_plans.planid_notice",
 							 "Raise notice of a plan's id after its execution. "
@@ -328,8 +345,11 @@ _PG_init(void)
 							 PGC_USERSET,
 							 0,
 							 NULL,
-							 NULL,
-							 NULL);
+							 NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
 
 	DefineCustomEnumVariable("pg_stat_plans.explain_format",
 							 "EXPLAIN format to be used for "
@@ -341,8 +361,11 @@ _PG_init(void)
 							 PGC_SUSET,
 							 0,
 							 NULL,
-							 NULL,
-							 NULL);
+							 NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
 
 	DefineCustomBoolVariable("pg_stat_plans.verbose",
 							 "EXPLAIN verbosity to be used for "
@@ -353,8 +376,11 @@ _PG_init(void)
 							 PGC_USERSET,
 							 0,
 							 NULL,
-							 NULL,
-							 NULL);
+							 NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
 
 	EmitWarningsOnPlaceholders("pg_stat_plans");
 
@@ -375,12 +401,16 @@ _PG_init(void)
 	ExecutorStart_hook = pgsp_ExecutorStart;
 	prev_ExecutorRun = ExecutorRun_hook;
 	ExecutorRun_hook = pgsp_ExecutorRun;
+#if PG_VERSION_NUM >= 90100
 	prev_ExecutorFinish = ExecutorFinish_hook;
 	ExecutorFinish_hook = pgsp_ExecutorFinish;
+#endif
 	prev_ExecutorEnd = ExecutorEnd_hook;
 	ExecutorEnd_hook = pgsp_ExecutorEnd;
 	prev_ProcessUtility = ProcessUtility_hook;
+#if PG_VERSION_NUM >= 90100
 	ProcessUtility_hook = pgsp_ProcessUtility;
+#endif
 }
 
 /*
@@ -393,7 +423,9 @@ _PG_fini(void)
 	shmem_startup_hook = prev_shmem_startup_hook;
 	ExecutorStart_hook = prev_ExecutorStart;
 	ExecutorRun_hook = prev_ExecutorRun;
+#if PG_VERSION_NUM >= 90100
 	ExecutorFinish_hook = prev_ExecutorFinish;
+#endif
 	ExecutorEnd_hook = prev_ExecutorEnd;
 	ProcessUtility_hook = ProcessUtility_hook;
 }
@@ -627,6 +659,7 @@ error:
 static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+#if PG_VERSION_NUM >= 90100
 	if (!search_path_xor_initialized)
 	{
 		/* Initialize search_path_xor */
@@ -645,8 +678,9 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		 */
 		search_path_xor_initialized = true;
 	}
-
 	Assert(search_path_xor != 0);
+#endif
+
 
 	if (pgsp_explaining)
 		queryDesc->instrument_options |= INSTRUMENT_TIMER;
@@ -697,6 +731,7 @@ pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
 	PG_END_TRY();
 }
 
+#if PG_VERSION_NUM >= 90100
 /*
  * ExecutorFinish hook: all we need do is track nesting depth
  */
@@ -719,6 +754,7 @@ pgsp_ExecutorFinish(QueryDesc *queryDesc)
 	}
 	PG_END_TRY();
 }
+#endif
 
 /*
  * ExecutorEnd hook: store results if needed
@@ -759,8 +795,6 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
 					(errmsg("planid: %u", planId)));
-
-		Assert(!pgsp_explaining);
 	}
 
 	/* ...xor explain a query */
@@ -791,6 +825,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		standard_ExecutorEnd(queryDesc);
 }
 
+#if PG_VERSION_NUM >= 90100
 /*
  * ProcessUtility hook
  *
@@ -841,6 +876,7 @@ pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 		}
 	}
 }
+#endif
 
 /*
  * Calculate hash value for a key
@@ -991,7 +1027,11 @@ pgsp_store(const char *query, Oid planId,
 			entry->query[query_len] = '\0';
 			entry->query_valid = true;
 			/* search_path may have changed since original execution */
+#if PG_VERSION_NUM >= 90100
 			entry->spath_xor = search_path_xor;
+#else
+			entry->spath_xor = false;
+#endif
 		}
 
 		LWLockRelease(pgsp->lock);
@@ -1101,7 +1141,13 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 			values[i++] = CStringGetTextDatum("<insufficient privilege>");
 
 		/* Did original search_path matches that of current client? */
+#if PG_VERSION_NUM >= 90100
 		values[i++] = BoolGetDatum(entry->spath_xor == search_path_xor);
+#else
+		values[i++] = BoolGetDatum(false);
+		/* No support for this on 9.0, so just make it NULL */
+		nulls[i - 1] = true;
+#endif
 		/* Will query reproduce this plan, last we checked? */
 		values[i++] = BoolGetDatum(entry->query_valid);
 
@@ -1477,8 +1523,13 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 		entry->query_len = query_len;
 		memcpy(entry->query, query, query_len);
 		entry->query[query_len] = '\0';
+#if PG_VERSION_NUM >= 90100
 		/* record search_path */
 		entry->spath_xor = search_path_xor;
+#else
+		/* Don't know search_path */
+		entry->spath_xor = false;
+#endif
 	}
 
 	return entry;
@@ -1920,6 +1971,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) crexpr->arg);
 			}
 			break;
+#if PG_VERSION_NUM >= 90100
 		case T_CollateExpr:
 			{
 				CollateExpr *ce = (CollateExpr *) node;
@@ -1928,6 +1980,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) ce->arg);
 			}
 			break;
+#endif
 		case T_CaseExpr:
 			{
 				CaseExpr   *caseexpr = (CaseExpr *) node;
@@ -2149,7 +2202,9 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 			{
 				ModifyTable *mt = (ModifyTable *) node;
 
+#if PG_VERSION_NUM >= 90100
 				APP_JUMB(mt->resultRelIndex);
+#endif
 				JumblePlanHeader(jstate, &mt->plan);
 				JumbleExpr(jstate, (Node *) mt->resultRelations);
 				JumbleExpr(jstate, (Node *) mt->returningLists);
@@ -2169,6 +2224,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) app->appendplans);
 			}
 			break;
+#if PG_VERSION_NUM >= 90100
 		case T_MergeAppend:
 			{
 				MergeAppend *ma = (MergeAppend *) node;
@@ -2176,6 +2232,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumblePlanHeader(jstate, &ma->plan);
 			}
 			break;
+#endif
 		case T_RecursiveUnion:
 			{
 				RecursiveUnion *ru = (RecursiveUnion *) node;
@@ -2219,8 +2276,10 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleScanHeader(jstate, &is->scan);
 
 				JumbleExpr(jstate, (Node *) is->indexqualorig);
+#if PG_VERSION_NUM >= 90100
 				JumbleExpr(jstate, (Node *) is->indexorderby);
 				JumbleExpr(jstate, (Node *) is->indexorderbyorig);
+#endif
 				JumbleExpr(jstate, (Node *) is->indexqual);
 				APP_JUMB(is->indexid);
 				APP_JUMB(is->indexorderdir);
@@ -2314,6 +2373,7 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleScanHeader(jstate, &wts->scan);
 			}
 			break;
+#if PG_VERSION_NUM >= 90100
 		case T_ForeignScan:
 			{
 				ForeignScan *fs = (ForeignScan *) node;
@@ -2321,7 +2381,8 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				JumbleScanHeader(jstate, &fs->scan);
 			}
 			break;
-#if PG_VERSION_NUM < 90200
+#endif
+#if PG_VERSION_NUM < 90200 && PG_VERSION_NUM >= 90100
 		case T_FdwPlan:
 			{
 				/* TODO: Something. No such struct. */
@@ -2341,11 +2402,13 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 				NestLoop *nl = (NestLoop *) node;
 				APP_JUMB(nl->join.jointype);
 				JumblePlanHeader(jstate, &nl->join.plan);
+#if PG_VERSION_NUM >= 90100
 				foreach(temp, nl->nestParams)
 				{
 					Node *param = (Node *) lfirst(temp);
 					JumbleExpr(jstate, param);
 				}
+#endif
 			}
 			break;
 		case T_MergeJoin:
@@ -2454,12 +2517,14 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 			}
 			break;
 			/* these aren't subclasses of Plan: */
+#if PG_VERSION_NUM >= 90100
 		case T_NestLoopParam:
 			{
 				NestLoopParam *nlp = (NestLoopParam *) node;
 				JumbleExpr(jstate, (Node *) nlp->paramval);
 			}
 			break;
+#endif
 		case T_PlanRowMark:
 			{
 				PlanRowMark *prm = (PlanRowMark*) node;
