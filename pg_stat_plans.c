@@ -156,7 +156,7 @@ static char *explain_text = NULL;
 /* whether currently explaining query */
 static PGSPExplainLevel pgsp_explaining = PGSP_NO_EXPLAIN;
 /* current XOR'd search_path representation for backend */
-static Oid search_path_xor;
+static Oid search_path_xor = 0;
 /* Is search_path_xor initialized? */
 static bool search_path_xor_initialized = false;
 
@@ -639,6 +639,8 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		search_path_xor_initialized = true;
 	}
 
+	Assert(search_path_xor != 0);
+
 	if (pgsp_explaining)
 		queryDesc->instrument_options |= INSTRUMENT_TIMER;
 
@@ -719,12 +721,14 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	Oid planId = 0;
 
+	/* Setup common to cost aggregation and explain cases */
 	if (queryDesc->totaltime && (pgsp_enabled() || pgsp_explaining))
 	{
 		pgspJumbleState	jstate;
 		/* Set up workspace for plan jumbling */
 		jstate.jumble = (unsigned char *) palloc(JUMBLE_SIZE);
 		jstate.jumble_len = 0;
+
 		/*
 		 * Make sure stats accumulation is done.  (Note: it's okay if several
 		 * levels of hook all do this.)
@@ -736,6 +740,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		planId |= hash_any(jstate.jumble, jstate.jumble_len);
 	}
 
+	/* Aggregate costs... */
 	if (queryDesc->totaltime && pgsp_enabled())
 	{
 		pgsp_store(queryDesc->sourceText,
@@ -747,8 +752,11 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
 					(errmsg("planid: %u", planId)));
+
+		Assert(!pgsp_explaining);
 	}
 
+	/* ...xor explain a query */
 	if (pgsp_explaining)
 	{
 		/*
@@ -784,8 +792,8 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
  *
  * However, this is how we try and monitor if search_path is set by
  * applications, to enforce that the original query execution's search_path
- * matches our own when EXPLAINING stored query text. This is obviously
- * a klude, but it seems to be the only mechanism available to do this.
+ * matches our own when explaining stored query text. This is obviously
+ * a kludge, but it seems to be the only mechanism available to do this.
  */
 static void
 pgsp_ProcessUtility(Node *parsetree, const char *queryString,
@@ -930,8 +938,8 @@ pgsp_store(const char *query, Oid planId,
 		/*
 		 * Entry was previously found to have a query string that no longer
 		 * produces this plan. This may be due to adjustments in planner cost
-		 * constants, a critical change in statistical distribution, and many
-		 * other things.
+		 * constants, a change in statistical distribution, and many other
+		 * things.
 		 *
 		 * Update the entry's query string so that its query string is
 		 * representative. We don't do this all the time because it entails

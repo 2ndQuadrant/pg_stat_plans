@@ -149,14 +149,14 @@ def verify_statement_differs(sql, diff, conn, test_name=None, cleanup_sql=None):
     test_no += 1
 
 
-def test_assert(assertion, conn):
+def test_assert(assertion, des, conn):
     global test_no
     global failures
     if not assertion:
         failures += 1
-        sys.stderr.write("Assertion (test {0}) failed!\n\n".format(test_no))
-
-    print """Assertion good.Test {0} passed.\n\n """.format(test_no)
+        sys.stderr.write("Assertion (\"{0}\")(test {1}) failed!\n\n".format(des, test_no))
+    else:
+        print """Assertion (\"{0}\") good. Test {1} passed.\n""".format(des, test_no)
     test_no += 1
 
 
@@ -1145,14 +1145,14 @@ def main():
     'select foo%';""")
 
     for i in cur:
-        test_assert(i[0] == 1, conn)
+        test_assert(i[0] == 1, "i[0] == 1 ('select foo%')", conn)
 
     cur.execute("""
     select calls from pg_stat_plans where query ilike
     'select bar%';""")
 
     for i in cur:
-        test_assert(i[0] == 1, conn)
+        test_assert(i[0] == 1, "i[0] == 1 ('select bar%')", conn)
 
     # Verify that recursive calls were normalised correctly - check both
     # entries, and that there was no cross-contamination where the recursive
@@ -1162,13 +1162,13 @@ def main():
     select calls from pg_stat_plans where query ilike
     '%else foo%';""")
     for i in cur:
-        test_assert(i[0] == 6, conn)
+        test_assert(i[0] == 6, "i[0] == 6 ('else foo%')", conn)
 
     cur.execute("""
     select calls from pg_stat_plans where query ilike
     '%else bar%';""")
     for i in cur:
-        test_assert(i[0] == 6, conn)
+        test_assert(i[0] == 6, "i[0] == 6 ('else bar%')", conn)
 
     global failures
     sys.stderr.write("Failures: {0} out of {1} tests.\n".format(failures, test_no - 1))
