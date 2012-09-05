@@ -103,8 +103,8 @@ Setting up PostgreSQL
 ---------------------
 
 The module requires additional shared memory amounting to about
-pg_stat_plans.max * track_activity_query_size bytes. Note that this memory is
-consumed whenever the module is loaded, even if pg_stat_statements.track is set
+pg_stat_plans.max * plans_query_size bytes. Note that this memory is
+consumed whenever the module is loaded, even if pg_stat_plans.track is set
 to none.
 
 It is necessary to change a setting in postgresql.conf. The module must be loaded
@@ -160,7 +160,7 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | planid              | oid              | OID of the plan                                                     |
 +---------------------+------------------+---------------------------------------------------------------------+
-| query               | text             | Text of the first statement (up to track_activity_query_size bytes) |
+| query               | text             | Text of the first statement (up to plans_query_size bytes) |
 +---------------------+------------------+---------------------------------------------------------------------+
 | had_our_search_path | boolean          | indicates if query strings execution's search_path matches current  |
 +---------------------+------------------+---------------------------------------------------------------------+
@@ -341,6 +341,12 @@ values are text, xml, json, and yaml. The default is text.
 pg_stat_plans.verbose specifies if explain output should be verbose (that is,
 equivalent to specifying VERBOSE with SQL EXPLAIN. The default is off.
 
+``pg_stat_plans.plans_query_size (integer)``
+----------------------------------
+Controls the length in bytes of the stored SQL query string. Because truncating
+the stored strings prevents subsequently explaining the entry, it may be
+necessary to increase this value. The default is 2048.
+
 Limitations
 ===========
 
@@ -372,8 +378,9 @@ Explaining stored query text
 ----------------------------
 
 The module will not explain stored query text that has been truncated. For that
-reason, values of ``track_activity_query_size`` greater than the default of 1024
-are likely to be widely useful.
+reason, the size of stored query text is set separately from the server-wide
+``track_activity_query_size`` setting. It may be necessary to set
+``pg_stat_plans.plans_query_size`` to a value greater than the default of 2048.
 
 pg_stat_plans EXPLAINs plans using a standard interface with the stored query
 text. Since there is no way to explain the stored query text of a query prepared

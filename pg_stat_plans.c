@@ -215,6 +215,7 @@ static bool pgsp_planid_notice;	/* whether to give planid NOTICE */
 static int	pgsp_explain_format;/* Format for pg_stat_plans_explain() */
 static bool	pgsp_verbose;		/* Should EXPLAIN be verbose? */
 static Oid	pgsp_planid = -1;	/* last planid explained for backend */
+static int	plans_query_size;	/* Size of stored query text */
 
 #define pgsp_enabled() \
 	(pgsp_track == PGSP_TRACK_ALL || \
@@ -304,6 +305,22 @@ _PG_init(void)
 							&pgsp_max,
 							1000,
 							100,
+							INT_MAX,
+							PGC_POSTMASTER,
+							0,
+							NULL,
+							NULL
+#if PG_VERSION_NUM >= 90100
+							,NULL
+#endif
+							);
+
+	DefineCustomIntVariable("pg_stat_plans.plans_query_size",
+							"Size of stored SQL query text.",
+							NULL,
+							&plans_query_size,
+							2048,
+							256,
 							INT_MAX,
 							PGC_POSTMASTER,
 							0,
@@ -475,7 +492,7 @@ pgsp_shmem_startup(void)
 	{
 		/* First time through ... */
 		pgsp->lock = LWLockAssign();
-		pgsp->query_size = pgstat_track_activity_query_size;
+		pgsp->query_size = plans_query_size;
 	}
 
 	/* Be sure everyone agrees on the hash table entry size */
@@ -1272,8 +1289,8 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 					 errmsg("Cannot explain truncated query string "
 							"(planid: %u)", planid),
-					 errhint("Though it won't help with this case, considering"
-							 "increasing track_activity_query_size")));
+					 errhint("Though it won't help with this case, consider "
+							 "increasing pg_stat_plans.plans_query_size")));
 
 		PG_RETURN_NULL();
 	}
