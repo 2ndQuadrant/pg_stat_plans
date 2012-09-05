@@ -97,7 +97,7 @@ system directories using sudo, ``pg_config`` won't be in root's path.
 
 The following invocation of ``make`` works around this issue::
 
-  sudo PATH="/usr/pgsql-9.1/bin:$PATH" make USE_PGXS=1 install
+  sudo PATH="/usr/pgsql-9.1/bin:$PATH" make install
 
 Setting up PostgreSQL
 ---------------------
@@ -113,7 +113,7 @@ it requires additional shared memory. This means that a server restart is needed
 to add or remove the module. Typical usage might be::
 
   # postgresql.conf
-  shared_preload_libraries = 'pg_stat_statements'
+  shared_preload_libraries = 'pg_stat_plans'
   # Optionally:
   pg_stat_plans.max = 10000
   pg_stat_plans.track = all
@@ -371,12 +371,9 @@ However, the module can differentiate between these queries just fine::
 Explaining stored query text
 ----------------------------
 
-No particular effort is made by the module to ensure that it can explain a
-truncated query text. If you run pg_stat_plans_explain on an entry whose query
-text exceeds ``track_activity_query_size``, a syntax error may result. In fact,
-it's possible (though quite unlikely) that there *will not* be a syntax error,
-and an entirely distinct query will be explained, leading to a misrepresentation
-of plan execution costs.
+The module will not explain stored query text that has been truncated. For that
+reason, values of ``track_activity_query_size`` greater than the default of 1024
+are likely to be widely useful.
 
 pg_stat_plans EXPLAINs plans using a standard interface with the stored query
 text. Since there is no way to explain the stored query text of a query prepared
@@ -399,11 +396,14 @@ fingerprint of the search_path setting is stored with each pg_stat_plans entry.
 The module will produce an error in the event of trying to call
 pg_stat_plans_explain function (which rather straightforwardly explains the
 stored query text of the originating query's execution) with a different
-``search_path`` setting to that used for the original execution. The
-``had_our_search_path`` column of the pg_stat_plans view indicates if this will
-happen for the entry should the function be called. Note, however, that due to a
-technical limitation, support for this is not available for PostgreSQL 9.0, and
-on that version the ``had_our_search_path`` column will always be NULL.
+``search_path`` setting to that used for the original execution, if and only if
+the plan fingerprinting shows an inconsistency (if the ``search_path`` setting
+matched, the inconsistency would only result in a warning, as it would be
+assumed that the query proper remained the same). The ``had_our_search_path``
+column of the pg_stat_plans view indicates if this will happen for the entry
+should the function be called. Note, however, that due to a technical
+limitation, support for this is not available for PostgreSQL 9.0, and on that
+version the ``had_our_search_path`` column will always be NULL.
 
 Possibility of hash collisions, stability of planids
 ----------------------------------------------------

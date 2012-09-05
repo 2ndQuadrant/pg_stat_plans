@@ -36,6 +36,7 @@
 #include "access/hash.h"
 #include "executor/instrument.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_collation.h"
 #include "commands/explain.h"
 #include "executor/spi.h"
 #include "funcapi.h"
@@ -48,6 +49,7 @@
 #include "storage/spin.h"
 #include "tcop/utility.h"
 #include "utils/builtins.h"
+#include "utils/formatting.h"
 #include "utils/memutils.h"
 
 
@@ -68,6 +70,8 @@ static const uint32 PGSP_FILE_HEADER = 0x20120328;
 /* pgsp entry state flags */
 #define PGSP_VALID			(1 << 0)	/* String produces same plan */
 #define PGSP_PREPARED		(1 << 1)	/* Entry from prepared query */
+#define PGSP_TRUNCATED		(1 << 2)	/* SQL string truncated */
+#define PGSP_UTILITY		(1 << 3)	/* Optimizable utility */
 
 /*
  * Hashtable key that defines the identity of a hashtable entry.  We separate
@@ -257,7 +261,8 @@ static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
 					   double total_time, uint64 rows,
-					   const BufferUsage *bufusage, bool prepared);
+					   const BufferUsage *bufusage,
+					   bool prepared, bool utility);
 static char *pgsp_explain(QueryDesc *queryDesc);
 static Oid	get_search_path_xor(void);
 static Size pgsp_memsize(void);
@@ -789,12 +794,16 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 	/* Aggregate costs... */
 	if (queryDesc->totaltime && pgsp_enabled())
 	{
+		bool is_utility = (queryDesc->operation == CMD_UTILITY ||
+						   queryDesc->plannedstmt->utilityStmt != NULL);
+
 		pgsp_store(queryDesc->sourceText,
 				   planId,
 				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
 				   queryDesc->estate->es_processed,
 				   &queryDesc->totaltime->bufusage,
-				   queryDesc->params != NULL);
+				   queryDesc->params != NULL,
+				   is_utility);
 
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
@@ -920,7 +929,8 @@ pgsp_match_fn(const void *key1, const void *key2, Size keysize)
 static void
 pgsp_store(const char *query, Oid planId,
 		   double total_time, uint64 rows,
-		   const BufferUsage *bufusage, bool prepared)
+		   const BufferUsage *bufusage,
+		   bool prepared, bool utility)
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
@@ -959,10 +969,14 @@ pgsp_store(const char *query, Oid planId,
 		 * to truncate it if over-length.
 		 */
 		if (query_len >= pgsp->query_size)
+		{
 			query_len = pg_encoding_mbcliplen(key.encoding,
 											  query,
 											  query_len,
 											  pgsp->query_size - 1);
+
+			entry->query_flags |= PGSP_TRUNCATED;
+		}
 
 		/* Acquire exclusive lock as required by entry_alloc() */
 		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
@@ -1017,6 +1031,10 @@ pgsp_store(const char *query, Oid planId,
 
 		entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
+		/*
+		 * Entry might have been evicted the instant we released the shared
+		 * lock...
+		 */
 		if (entry)
 		{
 			query_len = strlen(query);
@@ -1025,11 +1043,14 @@ pgsp_store(const char *query, Oid planId,
 			 * As above, we have to truncate it if over-length.
 			 */
 			if (query_len >= pgsp->query_size)
+			{
 				query_len = pg_encoding_mbcliplen(key.encoding,
 												  query,
 												  query_len,
 												  pgsp->query_size - 1);
 
+				entry->query_flags |= PGSP_TRUNCATED;
+			}
 			memcpy(entry->query, query, query_len);
 			entry->query[query_len] = '\0';
 			entry->query_flags |= PGSP_VALID;
@@ -1152,8 +1173,7 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		values[i++] = BoolGetDatum(entry->spath_xor == search_path_xor);
 #else
 		/* No support for this on 9.0, so just make it NULL */
-		nulls[i] = true;
-		values[i++] = BoolGetDatum(false);
+		nulls[i++] = true;
 #endif
 		/* Will query reproduce this plan, last we checked? */
 		values[i++] = BoolGetDatum(entry->query_flags & PGSP_VALID);
@@ -1208,6 +1228,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	Oid			userid	= PG_GETARG_OID(1);
 	Oid			dbid	= PG_GETARG_OID(2);
 	Oid			encod	= PG_GETARG_OID(3);
+
 	text	   *result;
 	pgspHashKey key;
 	pgspEntry  *entry;
@@ -1225,19 +1246,35 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("pg_stat_plans cannot explain query from another "
-						"database")));
+						"database"),
+				 errhint("Current database oid is %u", MyDatabaseId)));
 
 	/* Lookup the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
 
 	entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
-	if (entry->query_flags & PGSP_PREPARED)
+	if (entry->query_flags & (PGSP_PREPARED | PGSP_UTILITY | PGSP_TRUNCATED))
 	{
 		LWLockRelease(pgsp->lock);
-		ereport(NOTICE,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("Cannot explain prepared query (planid: %u)", planid)));
+		if (entry->query_flags & PGSP_PREPARED)
+			ereport(NOTICE,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("Cannot explain prepared query (planid: %u)",
+							planid)));
+		else if (entry->query_flags & PGSP_UTILITY)
+			ereport(NOTICE,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("Cannot explain utility optimizable statement "
+							"(planid: %u)",	planid)));
+		else if (entry->query_flags & PGSP_TRUNCATED)
+			ereport(NOTICE,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("Cannot explain truncated query string "
+							"(planid: %u)", planid),
+					 errhint("Though it won't help with this case, considering"
+							 "increasing track_activity_query_size")));
+
 		PG_RETURN_NULL();
 	}
 
@@ -1246,6 +1283,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		/* Obtain query string for explain */
 		StringInfoData query;
 		int ret;
+		bool	done = false;
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
@@ -1267,14 +1305,16 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		}
 		PG_CATCH();
 		{
-			pgsp_explaining = PGSP_NO_EXPLAIN;
-			PG_RE_THROW();
+			done = true;
 		}
 		PG_END_TRY();
 
 		SPI_finish();
 
 		pgsp_explaining = PGSP_NO_EXPLAIN;
+
+		if (done)
+			PG_RETURN_NULL();
 
 		if (explain_text)
 		{
@@ -1288,10 +1328,62 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 				StringInfoData err;
 
 				/*
+				 * XXX: This is a grotty hack.
+				 *
+				 * pg_stat_plans cannot reasonably descriminate between DECLARE
+				 * CURSOR FETCH plans and any other similar type of optimizable
+				 * statement.  However, since the query string will be given as
+				 * the original DECLARE CURSOR string, an EXPLAIN will succeed
+				 * (though fingerprinting of that EXPLAIN will not be consistent
+				 * with the original, which may be how we got here). We try to
+				 * ignore utility statements in pgsp_ExecutorEnd, but this isn't
+				 * a utility statement (actually, there is a separate utility
+				 * statement, but that's not perceptible on 9.0 anyway, so I'm
+				 * not tempted to do it that way). If EXPLAIN DECLARE CURSOR
+				 * simply broke, it wouldn't be unreasonable to just swallow the
+				 * error and document the problem. However, it doesn't, so we
+				 * are left with no choice but to parse the query string to see
+				 * if it is consistent with being a DECLARE CURSOR statement.
+				 *
+				 * We cannot very well do anything more than just shrug at this.
+				 * If we attempted to parse the "underlying" optimizable
+				 * statement, we'd fall flat on our faces. For one thing (and I
+				 * dare say that there are more, but this will do), when a
+				 * cursor is declared, the planner knows that startup costs are
+				 * much more important, and behaves accordingly.
+				 */
+				char *lower 	= str_tolower(entry->query, entry->query_len,
+												C_COLLATION_OID);
+				int match 		= sscanf(lower, "declare %*s cursor");
+
+				pfree(lower);
+
+				if (match >= 0)
+				{
+					ereport(NOTICE,
+							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+							 errmsg("Cannot explain declare cursor statement"
+									"(planid: %u)", planid)));
+
+					/* Don't invalidate cursor query */
+					PG_RETURN_NULL();
+				}
+
+				/*
 				 * If search_path differed, assume the relations differ, and
 				 * ERROR rather than just WARNING
 				 */
 				if (entry->spath_xor != cur_sp_xor)
+				{
+					/* Update hashtable to invalidate query string */
+					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
+					if (entry)
+						entry->query_flags &= ~PGSP_VALID;
+
+					LWLockRelease(pgsp->lock);
+
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_SCHEMA_NAME),
 							 errmsg("current search_path does not match that for "
@@ -1304,6 +1396,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 							 errhint("make search_path setting match that used "
 									 "during original originating query's "
 									 "execution")));
+				}
 
 				initStringInfo(&err);
 				appendStringInfo(&err, "***** Existing entry's planid (%u) "
@@ -2576,6 +2669,14 @@ JumbleExpr(pgspJumbleState *jstate, Node *node)
 		case T_DefElem:
 			{
 				/* Do nothing */
+			}
+			break;
+		case T_DeclareCursorStmt:
+			{
+				/*
+				 * Do nothing - this can be seen due to EXPLAIN DECLARE
+				 * CURSOR...
+				 */
 			}
 			break;
 		default:
