@@ -60,7 +60,7 @@ CREATE FUNCTION pg_stat_plans(
 )
 RETURNS SETOF record
 AS '$libdir/pg_stat_plans'
-LANGUAGE C;
+LANGUAGE C COST 1000;
 
 CREATE FUNCTION pg_stat_plans_explain(planid oid,
 							userid oid default NULL,

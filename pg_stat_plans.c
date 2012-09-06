@@ -973,6 +973,7 @@ pgsp_store(const char *query, Oid planId,
 	/* Create new entry, if not present */
 	if (!entry)
 	{
+		bool was_truncated = false;
 		/*
 		 * We'll need exclusive lock to make a new entry.  There is no point
 		 * in holding shared lock while we normalize the string, though.
@@ -992,7 +993,7 @@ pgsp_store(const char *query, Oid planId,
 											  query_len,
 											  pgsp->query_size - 1);
 
-			entry->query_flags |= PGSP_TRUNCATED;
+			was_truncated = true;
 		}
 
 		/* Acquire exclusive lock as required by entry_alloc() */
@@ -1002,6 +1003,8 @@ pgsp_store(const char *query, Oid planId,
 
 		if (prepared)
 			entry->query_flags |= PGSP_PREPARED;
+		if (was_truncated)
+			entry->query_flags |= PGSP_TRUNCATED;
 	}
 
 	/* Increment the counts */
@@ -1249,15 +1252,13 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	text	   *result;
 	pgspHashKey key;
 	pgspEntry  *entry;
+	char *lower;
 
 	/* Set up key for hashtable search */
 	key.userid = PG_ARGISNULL(1)? GetUserId():userid;
 	key.dbid = PG_ARGISNULL(2)? MyDatabaseId:dbid;
 	key.encoding = PG_ARGISNULL(3)? GetDatabaseEncoding():encod;
 	key.planid = planid;
-
-	if (pgsp_explaining)
-		elog(ERROR, "recursive call to pg_stat_plans_explain");
 
 	if (key.dbid != MyDatabaseId)
 		ereport(ERROR,
@@ -1271,7 +1272,13 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 	entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
 
-	if (entry->query_flags & (PGSP_PREPARED | PGSP_UTILITY | PGSP_TRUNCATED))
+	/* Get a lower-case copy of the query string while we can. */
+	if (entry)
+		lower = str_tolower(entry->query, entry->query_len,
+							C_COLLATION_OID);
+
+	if (entry && entry->query_flags & (PGSP_PREPARED | PGSP_UTILITY |
+									   PGSP_TRUNCATED))
 	{
 		LWLockRelease(pgsp->lock);
 		if (entry->query_flags & PGSP_PREPARED)
@@ -1301,6 +1308,9 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		StringInfoData query;
 		int ret;
 		bool	done = false;
+		ErrorContextCallback *previous;
+		int match_cur		=	-1;
+		int match_explain	=	-1;
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
@@ -1309,11 +1319,67 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		LWLockRelease(pgsp->lock);
 
 		/*
+		 * XXX: This is a grotty hack.
+		 *
+		 * pg_stat_plans cannot reasonably descriminate between DECLARE
+		 * CURSOR FETCH plans and any other similar type of optimizable
+		 * statement.  However, since the query string will be given as
+		 * the original DECLARE CURSOR string, an EXPLAIN will succeed
+		 * (though fingerprinting of that EXPLAIN will not be consistent
+		 * with the original, which may be how we got here). We try to
+		 * ignore utility statements in pgsp_ExecutorEnd, but this isn't
+		 * a utility statement (actually, there is a separate utility
+		 * statement, but that's not perceptible on 9.0 anyway, so I'm
+		 * not tempted to do it that way). If EXPLAIN DECLARE CURSOR
+		 * simply broke, it wouldn't be unreasonable to just swallow the
+		 * error and document the problem. However, it doesn't, so we
+		 * are left with no choice but to parse the query string to see
+		 * if it is consistent with being a DECLARE CURSOR statement.
+		 *
+		 * We cannot very well do anything more than just shrug at this.
+		 * If we attempted to parse the "underlying" optimizable
+		 * statement, we'd fall flat on our faces. For one thing (and I
+		 * dare say that there are more, but this will do), when a
+		 * cursor is declared, the planner knows that startup costs are
+		 * much more important, and behaves accordingly.
+		 */
+
+		if (lower)
+		{
+			match_cur = sscanf(lower, "declare %*s cursor");
+			match_explain = sscanf(lower, "explain %*s");
+			pfree(lower);
+		}
+
+
+		if (match_cur >= 1 || match_explain >= 1)
+		{
+			if (match_cur >= 0)
+				ereport(NOTICE,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("Cannot explain declare cursor statement"
+								"(planid: %u)", planid)));
+			else
+				ereport(NOTICE,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("Cannot explain explain statement"
+								"(planid: %u)", planid)));
+
+			/* Don't invalidate cursor query */
+			PG_RETURN_NULL();
+		}
+
+		/*
 		 * Connect to SPI manager
 		 */
 		if ((ret = SPI_connect()) != SPI_OK_CONNECT)
 			/* internal error */
 			elog(ERROR, "SPI connect failure - returned %d", ret);
+
+		/*
+		 * Must pop error stack here.
+		 */
+		previous = error_context_stack;
 
 		PG_TRY();
 		{
@@ -1323,8 +1389,12 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		PG_CATCH();
 		{
 			done = true;
+			error_context_stack = previous;
+			PG_RE_THROW();
 		}
 		PG_END_TRY();
+
+		error_context_stack = previous;
 
 		SPI_finish();
 
@@ -1343,48 +1413,6 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 			{
 				/* Warn user of differing plans for the entry */
 				StringInfoData err;
-
-				/*
-				 * XXX: This is a grotty hack.
-				 *
-				 * pg_stat_plans cannot reasonably descriminate between DECLARE
-				 * CURSOR FETCH plans and any other similar type of optimizable
-				 * statement.  However, since the query string will be given as
-				 * the original DECLARE CURSOR string, an EXPLAIN will succeed
-				 * (though fingerprinting of that EXPLAIN will not be consistent
-				 * with the original, which may be how we got here). We try to
-				 * ignore utility statements in pgsp_ExecutorEnd, but this isn't
-				 * a utility statement (actually, there is a separate utility
-				 * statement, but that's not perceptible on 9.0 anyway, so I'm
-				 * not tempted to do it that way). If EXPLAIN DECLARE CURSOR
-				 * simply broke, it wouldn't be unreasonable to just swallow the
-				 * error and document the problem. However, it doesn't, so we
-				 * are left with no choice but to parse the query string to see
-				 * if it is consistent with being a DECLARE CURSOR statement.
-				 *
-				 * We cannot very well do anything more than just shrug at this.
-				 * If we attempted to parse the "underlying" optimizable
-				 * statement, we'd fall flat on our faces. For one thing (and I
-				 * dare say that there are more, but this will do), when a
-				 * cursor is declared, the planner knows that startup costs are
-				 * much more important, and behaves accordingly.
-				 */
-				char *lower 	= str_tolower(entry->query, entry->query_len,
-												C_COLLATION_OID);
-				int match 		= sscanf(lower, "declare %*s cursor");
-
-				pfree(lower);
-
-				if (match >= 0)
-				{
-					ereport(NOTICE,
-							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-							 errmsg("Cannot explain declare cursor statement"
-									"(planid: %u)", planid)));
-
-					/* Don't invalidate cursor query */
-					PG_RETURN_NULL();
-				}
 
 				/*
 				 * If search_path differed, assume the relations differ, and
