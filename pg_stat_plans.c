@@ -100,11 +100,13 @@ typedef struct Counters
 	int64		shared_blks_hit;	/* # of shared buffer hits */
 	int64		shared_blks_read;		/* # of shared disk blocks read */
 	int64		shared_blks_written;	/* # of shared disk blocks written */
-	int64		local_blks_hit; /* # of local buffer hits */
+	int64		local_blks_hit; 	/* # of local buffer hits */
 	int64		local_blks_read;	/* # of local disk blocks read */
-	int64		local_blks_written;		/* # of local disk blocks written */
-	int64		temp_blks_read; /* # of temp blocks read */
-	int64		temp_blks_written;		/* # of temp blocks written */
+	int64		local_blks_written;	/* # of local disk blocks written */
+	int64		temp_blks_read; 	/* # of temp blocks read */
+	int64		temp_blks_written;	/* # of temp blocks written */
+	double		last_startup_cost;	/* last plan startup cost */
+	double		last_total_cost;	/* last plan total cost */
 	double		usage;			/* usage factor */
 } Counters;
 
@@ -261,9 +263,10 @@ static void pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 static uint32 pgsp_hash_fn(const void *key, Size keysize);
 static int	pgsp_match_fn(const void *key1, const void *key2, Size keysize);
 static void pgsp_store(const char *query, Oid planId,
-					   double total_time, uint64 rows,
-					   const BufferUsage *bufusage,
-					   bool prepared, bool utility);
+						   double total_time, uint64 rows,
+						   double startup_cost, double total_cost,
+						   const BufferUsage *bufusage,
+						   bool prepared, bool utility);
 static char *pgsp_explain(QueryDesc *queryDesc);
 static Oid	get_search_path_xor(void);
 static Size pgsp_memsize(void);
@@ -818,6 +821,8 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 				   planId,
 				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
 				   queryDesc->estate->es_processed,
+				   queryDesc->plannedstmt->planTree->startup_cost,
+				   queryDesc->plannedstmt->planTree->total_cost,
 				   &queryDesc->totaltime->bufusage,
 				   queryDesc->params != NULL,
 				   is_utility);
@@ -946,6 +951,7 @@ pgsp_match_fn(const void *key1, const void *key2, Size keysize)
 static void
 pgsp_store(const char *query, Oid planId,
 		   double total_time, uint64 rows,
+		   double startup_cost, double total_cost,
 		   const BufferUsage *bufusage,
 		   bool prepared, bool utility)
 {
@@ -1007,7 +1013,7 @@ pgsp_store(const char *query, Oid planId,
 			entry->query_flags |= PGSP_TRUNCATED;
 	}
 
-	/* Increment the counts */
+	/* Increment the counts, and set costs */
 	{
 		/*
 		 * Grab the spinlock while updating the counters (see comment about
@@ -1028,6 +1034,10 @@ pgsp_store(const char *query, Oid planId,
 		e->counters.local_blks_written += bufusage->local_blks_written;
 		e->counters.temp_blks_read += bufusage->temp_blks_read;
 		e->counters.temp_blks_written += bufusage->temp_blks_written;
+		/* Store latest costs for this plan */
+		e->counters.last_startup_cost = startup_cost;
+		e->counters.last_total_cost = total_cost;
+		/* Increment usage */
 		e->counters.usage += USAGE_EXEC(total_time);
 
 		SpinLockRelease(&e->mutex);
@@ -1107,7 +1117,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 17
+#define PG_STAT_PLAN_COLS 19
 
 /*
  * Retrieve plan statistics.
@@ -1218,6 +1228,8 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		values[i++] = Int64GetDatumFast(tmp.local_blks_written);
 		values[i++] = Int64GetDatumFast(tmp.temp_blks_read);
 		values[i++] = Int64GetDatumFast(tmp.temp_blks_written);
+		values[i++] = Float8GetDatumFast(tmp.last_startup_cost);
+		values[i++] = Float8GetDatumFast(tmp.last_total_cost);
 
 		Assert(i == PG_STAT_PLAN_COLS);
 

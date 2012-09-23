@@ -188,6 +188,10 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | temp_blks_written   | bigint           | Total number of temp blocks writes by the plan                      |
 +---------------------+------------------+---------------------------------------------------------------------+
+| last_startup_cost   | double precision | Last plan start-up cost observed for entry                          |
++---------------------+------------------+---------------------------------------------------------------------+
+| last_total_cost     | double precision | Last plan total cost observed for entry                             |
++---------------------+------------------+---------------------------------------------------------------------+
 
 The columns (userid, dbid, planid) serve as a unique indentifier for each
 entry in the view (assuming consistent use of a single encoding). planid is a
@@ -264,7 +268,11 @@ optimistically allow for the plan's revalidation. It would be unhelpful to
 discard statistics for plans that we may not see again, if this is due to a
 simple shift in the planner's preferences.
 
-The first time that a query is invalidated, a WARNING message is raised.
+The first time that a query is invalidated, a WARNING message is raised. It may
+be possible to observe the point at which the planner begins to prefer an
+alternative plan by referring to the ``last_startup_cost`` and/or
+``last_total_cost`` columns for each entry (among a set of entries for the same
+query).
 
 Note that there are numerous caveats related to this function. They are noted
 separately below, under "Limitations".

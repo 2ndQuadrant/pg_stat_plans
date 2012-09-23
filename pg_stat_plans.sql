@@ -56,7 +56,9 @@ CREATE FUNCTION pg_stat_plans(
     OUT local_blks_read int8,
     OUT local_blks_written int8,
     OUT temp_blks_read int8,
-    OUT temp_blks_written int8
+    OUT temp_blks_written int8,
+    OUT last_startup_cost float8,
+    OUT last_total_cost float8
 )
 RETURNS SETOF record
 AS '$libdir/pg_stat_plans'
