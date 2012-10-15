@@ -241,7 +241,7 @@ current value.
 Usage example::
 
  postgres=# select pg_stat_plans_explain(planid, userid, dbid), planid from
-  pg_stat_plans;
+  pg_stat_plans where planid = 2721250187;
  -[ RECORD 1 ]---------+--------------------------------------------------
  pg_stat_plans_explain | Result  (cost=0.00..0.01 rows=1 width=0)
  planid                | 2721250187
@@ -387,6 +387,55 @@ However, the module can differentiate between these queries just fine::
 
   select upper(lower(firstname)) from customers;
   select upper(upper(firstname)) from customers;
+
+The fact that this sort of thing can occur has the potential to be very
+confusing for some edge cases. Consider this example::
+
+  set pg_stat_plans.track = 'all';
+
+  ...
+
+  create or replace function bar(f integer) returns integer as
+  $$
+      DECLARE
+          ret integer;
+      BEGIN
+          select case f when 0 then 0 else bar(f -1) end into ret;
+          RETURN ret;
+      END;
+  $$ language plpgsql;
+
+  ...
+
+  select bar(5);
+
+The way that the execution costs involved here actually get broke out is
+version-dependent (though on any version, pg_stat_plans still attributes costs
+to the actual plans executed). Postgres 9.2+ added this feature::
+
+  Allow the planner to generate custom plans for specific parameter values even
+  when using prepared statements.
+
+For this reason, the recursive query happens to have the same finished plan as
+the top-level direct call to the function (even though it would have a distinct
+query fingerprint, if pg_stat_statements was consulted). At the same time, the
+terminating execution (again, because of the custom plan feature; pl/pgsql uses
+prepared statements under-the-hood) has a *different* plan to every other plan
+(different to both all other executions of that same prepared query, as well as
+the top-level call "select case f when 0 then 0 else bar(f -1) end").
+
+The final result is a top-level call and all-but-one recursive calls bunched
+together into a single entry, while the terminating call is in another entry.
+This *looks* like the top-level query is broken out from the recursive queries
+(and that the entry just has the wrong query text - both entries have "select
+case f when 0 then 0 else bar(f -1) end"), but in actuality everything has the
+right query text. The plan with a single call just isn't the plan it appears to
+be at first.
+
+On 9.1, however, the behaviour of pg_stat_plans here happens to be more
+intuitive. That is, as would be the case with 9.2's pg_stat_statements, the
+top-level query forms one entry, and all recursive queries another, since the
+recursive queries always use the same generic plan on that version.
 
 Explaining stored query text
 ----------------------------

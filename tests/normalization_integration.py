@@ -3,21 +3,25 @@
 """
 Normalization integration tests for pg_stat_plans
 
-Any sort of concurrency can be expected to break these
-regression tests, as they rely on the number of tuples
-in the pg_stat_plans view not changing due to
-external factors
+This is a modified version of the tests that originally drove the development
+of the query fingerprinting/normalization feature in Postgres 9.2's
+pg_stat_statements.
 
-I assume that the dellstore 2 dump has been restored
-to the postgres database
+I assume that the dellstore 2 dump has been restored to the postgres database
 http://pgfoundry.org/forum/forum.php?forum_id=603
 
-Note that these tests are only for normalization. We make no effort to vary
-plans between calls here.
+Any sort of concurrency can be expected to break these regression tests, as
+they rely on the number of tuples appearing in the pg_stat_plans view not
+changing due to external factors.
+
+Note that these tests are only for normalization (through plan fingerprinting).
+We make no effort to vary plans between calls here, so the "planner regression"
+stuff that might cause multiple entries for what is technically the same query
+isn't being excercised.
 
 Since we are testing the hashing of plans, it is necessary to run the tests
 with a stock postgresql.conf. You should also run ANALYZE manually after
-restoring the dellstore database. These tests are no so sophisticated that we
+restoring the dellstore database. These tests are not so sophisticated that we
 write them with a particular query plan in mind, but we should still apply a
 consistent standard insofar as possible.
 """
@@ -985,88 +989,6 @@ def main():
     "select 1," + (" " * 2045) + "55;",
     "select 4," + (" " * 3088) + "3456;",
     conn, "late constant")
-
-    # Ensure that nested queries are separately tracked.
-
-    # A trivial recursive function, with only a single call in the function
-    # body, should result in a "call" bump for each call of the function, be it
-    # within the function body itself or the original call from the client.
-
-    # We use plpgsql/SPI here as an optimization fence - SQL functions are liable to
-    # be inlined.
-
-    cur.execute(
-    """
-    create or replace function foo(f integer) returns integer as
-    $$
-        DECLARE
-            ret integer;
-        BEGIN
-            select case f when 0 then 0 else foo(f -1) end into ret;
-            RETURN ret;
-        END;
-    $$ language plpgsql;
-    """)
-
-    cur.execute(
-    """
-    create or replace function bar(f integer) returns integer as
-    $$
-        DECLARE
-            ret integer;
-        BEGIN
-            select case f when 0 then 0 else bar(f -1) end into ret;
-            RETURN ret;
-        END;
-    $$ language plpgsql;
-    """)
-    cur.execute("select pg_stat_plans_reset();")
-
-    def assert_cur_wrapper(expr_cur, val, desc):
-        "@expr_cur asserted to have one tuple, whose value is @val"
-        tups = expr_cur.fetchall()
-        if len(tups) != 1:
-            test_assert(False, "cur found to have wrong len "\
-                        "({0})".format(desc), conn)
-            return
-
-        tup = tups[0]
-        test_assert(tup[0] == val, str(val) + " is equal first col single "\
-                    "tup,assert for ({0})".format(desc), conn)
-
-    # The nested queries that SPI executes within each query should have 2
-    # pg_stat_plans entries, each with 6 calls, plus the original call to
-    # the function.
-    cur.execute("select foo(5);")
-    cur.execute("select bar(5);")
-
-    cur.execute("""
-    select calls from pg_stat_plans where query ilike
-    'select foo%' and query not ilike '%calls%';""")
-
-    assert_cur_wrapper(cur, 1, "('select foo%')")
-
-    cur.execute("""
-    select calls from pg_stat_plans where query ilike
-    'select bar%' and query not ilike '%calls%';""")
-
-    assert_cur_wrapper(cur, 1, "('select bar%')")
-
-    # Verify that recursive calls were normalised correctly - check both
-    # entries, and that there was no cross-contamination where the recursive
-    # calls were recognized as equivalent.
-
-    cur.execute("""
-    select calls from pg_stat_plans where query ilike
-    '%else foo%' and query not ilike '%calls%';""")
-
-    assert_cur_wrapper(cur, 6, "('else foo%')")
-
-    cur.execute("""
-    select calls from pg_stat_plans where query ilike
-    '%else bar%' and query not ilike '%calls%';""")
-
-    assert_cur_wrapper(cur, 6, "('else bar%')")
 
     global failures
     sys.stderr.write("Failures: {0} out of {1} tests.\n".format(failures, test_no - 1))

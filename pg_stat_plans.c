@@ -817,9 +817,13 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		bool is_utility = (queryDesc->operation == CMD_UTILITY ||
 						   queryDesc->plannedstmt->utilityStmt != NULL);
 
+		/*
+		 * Convert timing to msec (all supported pg versions use usec
+		 * internally)
+		 */
 		pgsp_store(queryDesc->sourceText,
 				   planId,
-				   queryDesc->totaltime->total * 1000.0,		/* convert to msec */
+				   queryDesc->totaltime->total * 1000.0,
 				   queryDesc->estate->es_processed,
 				   queryDesc->plannedstmt->planTree->startup_cost,
 				   queryDesc->plannedstmt->planTree->total_cost,
