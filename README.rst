@@ -475,6 +475,13 @@ should the function be called. Note, however, that due to a technical
 limitation, support for this is not available for PostgreSQL 9.0, and on that
 version the ``had_our_search_path`` column will always be NULL.
 
+Utility statements
+------------------
+pg_stat_plans does not retain pg_stat_statements ability to separately track
+utility statements. One reason for this is that it would create a tension with
+how and where we count some other types of execution costs (some utility
+statements have plans associated with them, which are separately executed).
+
 Possibility of hash collisions, stability of planids
 ----------------------------------------------------
 
