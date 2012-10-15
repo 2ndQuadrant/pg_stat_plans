@@ -11,7 +11,7 @@ Author: Peter Geoghegan
 Introduction
 ============
 
-pg_stat_plans is a variant of the standard Postgres contrib module,
+pg_stat_plans is a variant of the standard Postgres contrib module
 pg_stat_statements. It differentiates between and assigns execution costs to
 plans, rather than queries. This makes it particularly suitable for monitoring
 query planner regressions. However, it is also suitable as a general-purpose
@@ -193,7 +193,7 @@ plan executed).
 | last_total_cost     | double precision | Last plan total cost observed for entry                             |
 +---------------------+------------------+---------------------------------------------------------------------+
 
-The columns (userid, dbid, planid) serve as a unique indentifier for each
+The columns (userid, dbid, planid) serve as a unique identifier for each
 entry in the view (assuming consistent use of a single encoding). planid is a
 value derived from hashing the query tree just prior to execution.
 
