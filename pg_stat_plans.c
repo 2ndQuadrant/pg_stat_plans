@@ -1261,7 +1261,7 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	Oid			dbid	= PG_GETARG_OID(2);
 	Oid			encod	= PG_GETARG_OID(3);
 
-	text	   *result;
+	text	   *result = NULL;
 	pgspHashKey key;
 	pgspEntry  *entry;
 	char *lower;
