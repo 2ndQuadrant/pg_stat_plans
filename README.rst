@@ -240,11 +240,14 @@ current value.
 
 Usage example::
 
- postgres=# select pg_stat_plans_explain(planid, userid, dbid), planid from
-  pg_stat_plans where planid = 2721250187;
- -[ RECORD 1 ]---------+--------------------------------------------------
- pg_stat_plans_explain | Result  (cost=0.00..0.01 rows=1 width=0)
- planid                | 2721250187
+  postgres=# select pg_stat_plans_explain(planid, userid, dbid),
+      planid, last_startup_cost, last_total_cost from pg_stat_plans
+      where planid = 2721250187;
+  -[ RECORD 1 ]---------+--------------------------------------------------
+  pg_stat_plans_explain | Result  (cost=0.00..0.01 rows=1 width=0)
+  planid                | 2721250187
+  last_startup_cost     | 0
+  last_total_cost       | 0.01
 
 Internally, the function simply executes an ``EXPLAIN`` (*not* an ``EXPLAIN
 ANALYZE``) based on the known query text.
@@ -266,13 +269,23 @@ constant values, a shift in statistical distribution happened to result in it
 not being used for the originally seen constant value(s). This is why we
 optimistically allow for the plan's revalidation. It would be unhelpful to
 discard statistics for plans that we may not see again, if this is due to a
-simple shift in the planner's preferences.
+simple shift in the planner's preferences; in general a shift back remains quite
+possible.
 
 The first time that a query is invalidated, a WARNING message is raised. It may
 be possible to observe the point at which the planner begins to prefer an
-alternative plan by referring to the ``last_startup_cost`` and/or
-``last_total_cost`` columns for each entry (among a set of entries for the same
-query).
+alternative plan (the "crossover point") by referring to the
+``last_startup_cost`` and/or ``last_total_cost`` columns for each entry (among a
+set of entries related to the same query). Note, however, that this information
+should be interpreted carefully. It should be considered, for example, that it
+is quite possible for the planner to conclude that a certain plan is optimal,
+when that plan can be shown to actually be quite sub-optimal, due to the
+planner's choices being predicated on outdated statistics (to determine if this
+is happening, a manual ``EXPLAIN ANALYZE`` - which shows estimated and *actual*
+costs - is often very helpful). When those statistics are subsequently updated
+(perhaps by running ``ANALYZE`` manually), the planner may indicate that the
+new, superior plan actually has a higher estimated cost then the old, inferior
+plan.
 
 Note that there are numerous caveats related to this function. They are noted
 separately below, under "Limitations".
