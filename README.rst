@@ -284,7 +284,7 @@ planner's choices being predicated on outdated statistics (to determine if this
 is happening, a manual ``EXPLAIN ANALYZE`` - which shows estimated and *actual*
 costs - is often very helpful). When those statistics are subsequently updated
 (perhaps by running ``ANALYZE`` manually), the planner may indicate that the
-new, superior plan actually has a higher estimated cost then the old, inferior
+new, superior plan actually has a higher estimated cost than the old, inferior
 plan.
 
 Note that there are numerous caveats related to this function. They are noted
