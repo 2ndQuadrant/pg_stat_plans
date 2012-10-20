@@ -162,7 +162,7 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | planid              | oid              | OID of the plan                                                     |
 +---------------------+------------------+---------------------------------------------------------------------+
-| query               | text             | Text of the first statement (up to plans_query_size bytes) |
+| query               | text             | Text of the first statement (up to plans_query_size bytes)          |
 +---------------------+------------------+---------------------------------------------------------------------+
 | had_our_search_path | boolean          | indicates if query strings execution's search_path matches current  |
 +---------------------+------------------+---------------------------------------------------------------------+
