@@ -455,7 +455,7 @@ _PG_fini(void)
 	ExecutorFinish_hook = prev_ExecutorFinish;
 #endif
 	ExecutorEnd_hook = prev_ExecutorEnd;
-	ProcessUtility_hook = ProcessUtility_hook;
+	ProcessUtility_hook = prev_ProcessUtility;
 }
 
 /*
