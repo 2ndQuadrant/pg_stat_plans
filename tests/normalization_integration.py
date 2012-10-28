@@ -10,9 +10,9 @@ pg_stat_statements.
 I assume that the dellstore 2 dump has been restored to the postgres database
 http://pgfoundry.org/forum/forum.php?forum_id=603
 
-Any sort of concurrency can be expected to break these regression tests, as
-they rely on the number of tuples appearing in the pg_stat_plans view not
-changing due to external factors.
+Any concurrently active session can be expected to break these regression
+tests, as they rely on the number of tuples appearing in the pg_stat_plans view
+not changing due to external factors.
 
 Note that these tests are only for normalization (through plan fingerprinting).
 We make no effort to vary plans between calls here, so the "planner regression"
@@ -893,35 +893,6 @@ def main():
     """,
     conn)
 
-    # Declare cursor is a special sort of utility statement - one with
-    # a query tree that looks pretty much like that of a select statement
-
-    # Not really worth serializing the tree like a select statement though -
-    # Just treat it as a utility statement
-    #verify_statement_equivalency(
-    #"declare test_cursor cursor for select * from orders;",
-    #"declare test_cursor cursor for select * from orders;",
-    #cleanup_sql = "close all;", conn = conn)
-
-    # function-like dedicated ExprNodes
-
-    # I'd speculate that if this was performed with every ExprNode that resembles
-    # a function, it wouldn't actually fail, since there tends to be a good reason
-    # for having a dedicated though function-like ExprNode rather than just an
-    # SQL-callable function, and I'm naturally already serializing those differences
-    # as they're rather obviously essential to the query
-
-    # The concern here is a specific case of a more general one - that successive
-    # queries with similar ExprNodes could incorrectly be considered equivalent.
-
-    # NB:
-
-    # I consider the question of whether or not it is necessary to escape query-tree
-    # serializations (in a way that includes a magic number for the ExprNode, such as
-    # its offset in the NodeTag enum) to be an open one.
-
-    # Part of the difficulty is that OIDs cannot be expected to remain unique
-    # over time and across pg_* tables
     verify_statement_differs(
     "select coalesce(orderid) from orders;",
     "select sum(orderid) from orders;",
