@@ -83,8 +83,9 @@ install of PostgreSQL 9.1, the PostgreSQL binary directory will not be in your
 PATH by default either. Individual utilities are made available via the
 ``alternatives`` mechanism, but not all commands will be available that way.
 
-When building repmgr against a RPM packaged build, you may discover that some
-development packages are needed as well. The following build errors can occur::
+When building pg_stat_plans against a RPM packaged build, you may discover that
+some development packages are needed as well. The following build errors can
+occur::
 
   /usr/bin/ld: cannot find -lxslt
   /usr/bin/ld: cannot find -lpam
