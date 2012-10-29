@@ -1646,7 +1646,7 @@ pgsp_memsize(void)
 	Size		entrysize;
 
 	size = MAXALIGN(sizeof(pgspSharedState));
-	entrysize = offsetof(pgspEntry, query) +pgstat_track_activity_query_size;
+	entrysize = offsetof(pgspEntry, query) + plans_query_size;
 	size = add_size(size, hash_estimate_size(pgsp_max, entrysize));
 
 	return size;
