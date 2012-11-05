@@ -908,7 +908,7 @@ pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 	{
 		VariableSetStmt *v = (VariableSetStmt *) parsetree;
 
-		if (strcmp(v->name, "search_path") == 0)
+		if (!v->name || strcmp(v->name, "search_path") == 0)
 		{
 			/* search_path changed - update current search_path for backend. */
 			search_path_xor = get_search_path_xor();
