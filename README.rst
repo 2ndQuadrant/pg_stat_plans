@@ -390,8 +390,8 @@ consequence of this fact.
 
 For example, the following two queries are considered equivalent by the module::
 
-  select upper(lower("text"));
-  select upper(upper("text"));
+  select upper(lower('text'));
+  select upper(upper('text'));
 
 This is because the underlying ``pg_proc`` accessible functions are actually
 executed in preprocess_expression during planning, not execution proper. By the
