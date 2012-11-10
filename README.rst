@@ -236,10 +236,13 @@ alternative to actually storing all plans executed against the database.
 
 This function can be used to monitor planner regressions.
 
-Arguments should correspond to the respective values of some entry within the
+Arguments to the pg_stat_plans_explain function should correspond to the set of
+values that together uniquely identify some entry currently within the
 pg_stat_plans view. It is possible to omit all but the planid argument - the
-default argument of 0 for all other values is interpret by pg_stat_plans as the
-current value.
+default argument of NULL for userid, dbid and encodingid is interpreted by
+pg_stat_plans as the current value in each case, whatever that may be (that is,
+the current connection's user and database identifiers, and the backend
+encoding).
 
 Usage example::
 
