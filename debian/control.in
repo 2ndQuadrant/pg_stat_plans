@@ -1,0 +1,15 @@
+Source: pgstatplans
+Section: database
+Priority: extra
+Maintainer: Cédric Villemain <cedric@villemain.org>
+Build-Depends: debhelper (>= 7.0.50), postgresql-server-dev-all (>= 118)
+Standards-Version: 3.9.2
+Vcs-Git: git://github.com/2ndQuadrant/pg_stat_plans.git
+Vcs-browser: https://github.com/2ndQuadrant/pg_stat_plans.git
+Homepage: https://github.com/2ndQuadrant/pg_stat_plans
+
+Package: postgresql-PGVERSION-pgstatplans
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-PGVERSION
+Description: pg_stat_plans is a variant of the standard Postgres contrib module
+ pg_stat_statements.set of PostgreSQL functions to manage blocks in memory
