@@ -53,3 +53,11 @@ endif # VPATH
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+deb:
+	make clean
+	make -f debian/rules debian/control
+	dh clean
+	make -f debian/rules orig
+	debuild -us -uc -sa --source-option="--git-ref=master"
+

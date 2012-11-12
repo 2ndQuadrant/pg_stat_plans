@@ -1,4 +1,10 @@
 *.o
+.pc
+debian/control
+debian/files
+debian/pgstatplans-*
+debian/postgresql-*
+results/
 *.so
 *.pyc
 *.control
