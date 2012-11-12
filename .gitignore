@@ -1,8 +1,10 @@
+*.o
 .pc
 debian/control
 debian/files
-debian/pgfincore-*
+debian/pgstatplans-*
 debian/postgresql-*
 results/
 *.so
-pgfincore*.tar.gz
+*.pyc
+*.control
