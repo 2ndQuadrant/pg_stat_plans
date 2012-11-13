@@ -59,7 +59,7 @@ PG_MODULE_MAGIC;
 #define PGSP_DUMP_FILE	"global/pg_stat_plans.stat"
 
 /* This constant defines the magic number in the stats file header */
-static const uint32 PGSP_FILE_HEADER = 0x20120328;
+static const uint32 PGSP_FILE_HEADER = 0x20121113;
 
 /* XXX: Should USAGE_EXEC reflect execution time and/or buffer usage? */
 #define USAGE_EXEC(duration)	(1.0)
