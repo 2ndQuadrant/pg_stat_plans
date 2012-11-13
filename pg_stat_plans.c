@@ -121,7 +121,7 @@ typedef struct pgspEntry
 	Counters	counters;		/* the statistics for this query */
 	int			query_len;		/* # of valid bytes in query string */
 	Oid			spath_xor;		/* XOR of search_path during first execution */
-	char		query_flags;	/* Flags for query (validity, etc) */
+	uint8		query_flags;	/* Flags for query (validity, etc) */
 	slock_t		mutex;			/* protects the counters only */
 	char		query[1];		/* VARIABLE LENGTH ARRAY - MUST BE LAST */
 	/* Note: the allocated length of query[] is actually pgsp->query_size */
