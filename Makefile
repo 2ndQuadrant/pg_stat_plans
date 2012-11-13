@@ -1,5 +1,5 @@
 EXTENSION    = pg_stat_plans
-EXTVERSION   = 0.1
+EXTVERSION   = 1.0
 EXTCOMMENT   = Monitors execution costs of plans
 
 MODULES      = $(EXTENSION)
