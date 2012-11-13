@@ -1,0 +1,5 @@
+pgstatplans (1.0beta2-1) unstable; urgency=low
+
+  * Initial packaging
+
+ -- Cédric Villemain <cedric@villemain.org>  Mon, 12 Nov 2012 22:07:40 +0100
