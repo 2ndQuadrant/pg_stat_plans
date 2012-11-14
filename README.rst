@@ -361,24 +361,28 @@ postgresql.conf file or on the server command line.
 ``pg_stat_plans.planid_notice (boolean)``
 -----------------------------------------
 Raise notice of a plan's id after its execution. Useful for verifying explain
-output on an ad-hoc basis.
+output on an ad-hoc basis. The default is off. The setting can be changed by
+users dynamically.
 
 ``pg_stat_plans.explain_format (enum)``
 -----------------------------------
 pg_stat_plans.explain_format selects the EXPLAIN output format to be used (i.e
 the format that will be returned by ``pg_stat_plans_explain()``). The allowed
-values are text, xml, json, and yaml. The default is text.
+values are text, xml, json, and yaml. The default value is text. The setting can
+be changed by users dynamically.
 
 ``pg_stat_plans.verbose (boolean)``
 -----------------------------------
 pg_stat_plans.verbose specifies if explain output should be verbose (that is,
-equivalent to specifying VERBOSE with SQL EXPLAIN). The default is off.
+equivalent to specifying VERBOSE with SQL EXPLAIN). The default value is off.
+The setting can be changed by users dynamically.
 
 ``pg_stat_plans.plans_query_size (integer)``
 ----------------------------------
 Controls the length in bytes of the stored SQL query string. Because truncating
 the stored strings prevents subsequently explaining the entry, it may be
-necessary to increase this value. The default is 2048.
+necessary to increase this value. The default value is 2048. This parameter can
+only be set at server start.
 
 Limitations
 ===========
