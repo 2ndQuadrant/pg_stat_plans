@@ -102,6 +102,18 @@ The following invocation of ``make`` works around this issue::
 
   sudo PATH="/usr/pgsql-9.1/bin:$PATH" make install
 
+Notes on Debian and Ubuntu Builds
+---------------------------------
+
+The `Makefile` also as a target for Debian, it depends on `debhelper` and
+`postgresql-server-dev-all`. Install both of them then `make deb` to build the
+Debian packages for all your postgresql source installation
+(`postgresql-server-dev-9.2` for example)::
+
+  sudo aptitude install debhelper postgresql-server-dev-all
+  make deb
+  sudo dpkg -i ../postgresql-9.2-pgstatplans_*.deb
+
 Setting up PostgreSQL
 ---------------------
 
