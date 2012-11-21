@@ -1092,7 +1092,7 @@ pgsp_store(const char *query, Oid planId,
 #if PG_VERSION_NUM >= 90100
 			entry->spath_xor = search_path_xor;
 #else
-			entry->spath_xor = false;
+			entry->spath_xor = InvalidOid;
 #endif
 		}
 
@@ -1121,7 +1121,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 19
+#define PG_STAT_PLAN_COLS 20
 
 /*
  * Retrieve plan statistics.
@@ -1209,6 +1209,8 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		/* No support for this on 9.0, so just make it NULL */
 		nulls[i++] = true;
 #endif
+		/* Does this entry come from our database? */
+		values[i++] = BoolGetDatum(MyDatabaseId == entry->key.dbid);
 		/* Will query reproduce this plan, last we checked? */
 		values[i++] = BoolGetDatum(entry->query_flags & PGSP_VALID);
 

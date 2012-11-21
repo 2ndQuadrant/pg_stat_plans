@@ -45,6 +45,7 @@ CREATE FUNCTION pg_stat_plans(
     OUT planid oid,
     OUT query text,
     OUT had_our_search_path boolean,
+    OUT from_our_database boolean,
     OUT query_valid boolean,
     OUT calls int8,
     OUT total_time float8,

@@ -180,6 +180,8 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | had_our_search_path | boolean          | indicates if query strings execution's search_path matches current  |
 +---------------------+------------------+---------------------------------------------------------------------+
+| from_our_database   | boolean          | indicates if the entry originated from the current database         |
++---------------------+------------------+---------------------------------------------------------------------+
 | query_valid         | boolean          | indicates if query column text now produces same plan               |
 +---------------------+------------------+---------------------------------------------------------------------+
 | calls               | bigint           | Number of times executed                                            |
@@ -261,7 +263,7 @@ Usage example::
 
   postgres=# select pg_stat_plans_explain(planid, userid, dbid),
       planid, last_startup_cost, last_total_cost from pg_stat_plans
-      where planid = 2721250187;
+      where from_our_database and planid = 2721250187;
   -[ RECORD 1 ]---------+--------------------------------------------------
   pg_stat_plans_explain | Result  (cost=0.00..0.01 rows=1 width=0)
   planid                | 2721250187
