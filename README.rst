@@ -105,10 +105,11 @@ The following invocation of ``make`` works around this issue::
 Notes on Debian and Ubuntu Builds
 ---------------------------------
 
-The `Makefile` also as a target for Debian, it depends on `debhelper` and
-`postgresql-server-dev-all`. Install both of them then `make deb` to build the
-Debian packages for all your postgresql source installation
-(`postgresql-server-dev-9.2` for example)::
+The Makefile also provides a target for building Debian packages. The target has
+a dependency on ``debhelper`` and ``postgresql-server-dev-all``, and the
+PostgreSQL source package itself (e.g. ``postgresql-server-dev-9.2``).
+
+The packages can be created and installed as follows::
 
   sudo aptitude install debhelper postgresql-server-dev-all
   make deb
