@@ -101,10 +101,11 @@ def verify_statement_equivalency(sql, equiv, conn, test_name=None, cleanup_sql=N
                 equiv, test_no if test_name is None else "'{0}'({1})".format(test_name, test_no)))
         failures += 1
         print_query_trees(sql, equiv, cur)
+    else:
+        print """The statements \n'{0}'\n and \n'{1}'\n are equivalent, as
+        expected.  Test {2} passed.\n\n""".format(sql, equiv, test_no if test_name
+        is None else "'{0}' ({1})".format(test_name, test_no))
 
-    print """The statements \n'{0}'\n and \n'{1}'\n are equivalent, as
-    expected.  Test {2} passed.\n\n""".format(sql, equiv, test_no if test_name
-    is None else "'{0}' ({1})".format(test_name, test_no))
     test_no += 1
 
 
@@ -824,6 +825,16 @@ def main():
                     """, conn, "second case when test")
 
     verify_statement_differs("select min(orderid) from orders", "select max(orderid) from orders", conn, "min not max check")
+
+    # This should match - small OID references like this should not cause these
+    # two plans to be sunstantively different:
+    #
+    # Due to a "Heisenberg effect", the following test does not appear to pass,
+    # precisely because it is instrumented. Fix this some day.
+    #verify_statement_equivalency(
+    #"SELECT *, query, pg_stat_plans_explain(planid, userid, dbid) AS explain FROM pg_stat_plans WHERE planid = 3489937752 AND userid = 16395 AND dbid = 165;",
+    #"SELECT *, query, pg_stat_plans_explain(planid, userid, dbid) AS explain FROM pg_stat_plans WHERE planid = 3489937752 AND userid = 16395 AND dbid = 1655;",
+    #conn, "OID references")
 
     # The parser uses a dedicated Expr node to handle greatest()/least()
     verify_statement_differs("select greatest(1,2,3) from orders", "select least(1,2,3) from orders", conn, "greatest/least differ check")

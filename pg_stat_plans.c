@@ -1698,7 +1698,7 @@ entry_alloc(pgspHashKey *key, const char *query, int query_len)
 		entry->spath_xor = search_path_xor;
 #else
 		/* Don't know search_path */
-		entry->spath_xor = false;
+		entry->spath_xor = InvalidOid;
 #endif
 	}
 
@@ -1849,8 +1849,6 @@ JumblePlan(pgspJumbleState *jstate, PlannedStmt *plan)
 	JumbleExpr(jstate, (Node *) plan->subplans);
 	JumbleExpr(jstate, (Node *) plan->rewindPlanIDs);
 	JumbleExpr(jstate, (Node *) plan->rowMarks);
-	JumbleExpr(jstate, (Node *) plan->relationOids);
-	JumbleExpr(jstate, (Node *) plan->invalItems);
 }
 
 /*
