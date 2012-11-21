@@ -91,7 +91,7 @@ CREATE VIEW pg_stat_plans_queries AS
 	array_agg(planid) AS plan_ids,
 	array_agg(calls) AS calls_histogram,
 	array_agg(total_time / calls) AS avg_time_histogram,
-	normalize_query(query),
+	normalize_query(query) AS normalized_query,
 	sum(calls) AS calls,
 	sum(total_time) AS total_time,
 	variance(total_time / calls) AS time_variance,
