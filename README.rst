@@ -178,11 +178,11 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | query               | text             | Text of the first statement (up to plans_query_size bytes)          |
 +---------------------+------------------+---------------------------------------------------------------------+
-| had_our_search_path | boolean          | indicates if query strings execution's search_path matches current  |
+| had_our_search_path | boolean          | Indicates if query strings execution's search_path matches current  |
 +---------------------+------------------+---------------------------------------------------------------------+
-| from_our_database   | boolean          | indicates if the entry originated from the current database         |
+| from_our_database   | boolean          | Indicates if the entry originated from the current database         |
 +---------------------+------------------+---------------------------------------------------------------------+
-| query_valid         | boolean          | indicates if query column text now produces same plan               |
+| query_valid         | boolean          | Indicates if query column text now produces same plan               |
 +---------------------+------------------+---------------------------------------------------------------------+
 | calls               | bigint           | Number of times executed                                            |
 +---------------------+------------------+---------------------------------------------------------------------+
