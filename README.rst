@@ -315,7 +315,7 @@ pg_stat_plans_queries view
 --------------------------
 
 A variant of the regular pg_stat_plans view that summarises the statistics at
-the query granularity. Regular expression query text normalisation, with all of
+the query granularity. Regular expression query text normalization, with all of
 the attendant limitations is used.
 
 Most columns are essentially equivalent to and directly derived from a
