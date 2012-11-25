@@ -1323,12 +1323,12 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	if (entry)
 	{
 		/* Obtain query string for explain */
-		StringInfoData query;
-		int ret;
-		bool	done = false;
-		ErrorContextCallback *previous;
-		int match_cur		=	-1;
-		int match_explain	=	-1;
+		StringInfoData			query;
+		ErrorContextCallback 	*previous;
+		bool					done = false;
+		int 					match_cur		=	-1;
+		int 					match_explain	=	-1;
+		int						ret;
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
@@ -1427,90 +1427,93 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 			Size	len = strlen(explain_text);
 			Oid		cur_sp_xor =  get_search_path_xor();
 
-			if (pgsp_planid != planid)
+			if (pgsp_planid == planid)
 			{
-				/* Warn user of differing plans for the entry */
-				StringInfoData err;
+				/*
+				 * Entry text still produces same plan - just return EXPLAIN
+				 * output
+				 */
+				result = palloc(len + VARHDRSZ);
+				SET_VARSIZE(result, len + VARHDRSZ);
+				memcpy(VARDATA(result), explain_text, len);
+
+				/* Reset */
+				pfree(explain_text);
+				explain_text = NULL;
+			}
+			else
+			{
+				/*
+				 * Tell user that current plan produced by query string differs
+				 * from last time it was explained.
+				 */
+				bool invalidated = false;
+
+				/* Reset */
+				pfree(explain_text);
+				explain_text = NULL;
+
+				/* Invalidate query iff necessary */
+				if (entry->query_flags & PGSP_VALID)
+				{
+					/* Update hashtable to invalidate query string */
+					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+
+					if (entry)
+						entry->query_flags &= ~PGSP_VALID;
+
+					LWLockRelease(pgsp->lock);
+					invalidated = true;
+				}
 
 				/*
 				 * If search_path differed, assume the relations differ, and
 				 * ERROR rather than just WARNING
 				 */
-				if (entry->spath_xor != cur_sp_xor)
+				if (invalidated)
 				{
-					/* Update hashtable to invalidate query string */
-					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
-
-					if (entry)
-						entry->query_flags &= ~PGSP_VALID;
-
-					LWLockRelease(pgsp->lock);
-
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_SCHEMA_NAME),
-							 errmsg("current search_path does not match that for "
-									"original execution of query originally "
-									"produced planid %u. Furthermore, plans "
-									"for both queries differ(The new planid "
-									"is %u), very probably due to each plan "
-									"referencing what are technically distinct "
-									"relations.", planid, pgsp_planid),
-							 errhint("make search_path setting match that used "
-									 "during original originating query's "
-									 "execution")));
+					if (entry->spath_xor != cur_sp_xor)
+					{
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_SCHEMA_NAME),
+								 errmsg("current search_path does not match that for "
+										"original execution of query originally "
+										"produced planid %u. Furthermore, plans "
+										"for both queries differ(The new planid "
+										"is %u), very probably due to each plan "
+										"referencing what are technically distinct "
+										"relations.", planid, pgsp_planid),
+								 errhint("make search_path setting match that used "
+										 "during original originating query's "
+										 "execution")));
+					}
+					else
+					{
+						/* Warn when first observed for the entry */
+						ereport(WARNING,
+								(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+								 errmsg("Existing pg_stat_plans entry planid (%u) "
+										"differs from new plan for query (%u).",
+											planid, pgsp_planid)));
+					}
 				}
 
-				initStringInfo(&err);
-				appendStringInfo(&err, "***** Existing entry's planid (%u) "
-								 "and explain of original SQL query "
-								 "string planid (%u) differ "
-								 "*****\n", planid, pgsp_planid);
-
-				result = palloc(err.len + len + VARHDRSZ);
-				SET_VARSIZE(result, err.len + len + VARHDRSZ);
-				memcpy(VARDATA(result), err.data, err.len);
-				memcpy(VARDATA(result) + err.len, explain_text, len);
-
-				/* Invalidate query iff necessary */
-				if (entry->query_flags & PGSP_VALID)
-				{
-					/* Log when first observed for the entry */
-					ereport(WARNING,
-							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-							 errmsg("Existing pg_stat_plans entry planid (%u) "
-									"differs from new plan for query (%u).",
-										planid, pgsp_planid)));
-
-					/* Update hashtable to invalidate query string */
-					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-					entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
-
-					if (entry)
-						entry->query_flags &= ~PGSP_VALID;
-
-					LWLockRelease(pgsp->lock);
-				}
+				/*
+				 * Since we cannot provide an explain for the entry specified
+				 * anymore, simply return NULL
+				 */
+				PG_RETURN_NULL();
 			}
-			else
-			{
-				/* The typical case - just return EXPLAIN output */
-				result = palloc(len + VARHDRSZ);
-				SET_VARSIZE(result, len + VARHDRSZ);
-				memcpy(VARDATA(result), explain_text, len);
-			}
-
-			pfree(explain_text);
-			explain_text = NULL;
 		}
-		else
+		else /* No explain text set */
 		{
-			/* This is just defensive - explain text is expected to be set */
+			/* This is just defensive - control should never reach here */
 			LWLockRelease(pgsp->lock);
 			elog(ERROR, "EXPLAIN text wasn't set by pg_stat_plans_explain.");
 		}
 	}
-	else
+	else /* No entry */
 	{
 		LWLockRelease(pgsp->lock);
 		ereport(ERROR,
