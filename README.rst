@@ -320,7 +320,7 @@ the attendant limitations is used.
 
 Most columns are essentially equivalent to and directly derived from a
 pg_stat_plans column, and as such are not described separately. Some of the
-views' columns, whose broad purpose is to faciliate finding outlier plans, are
+views' columns, whose broad purpose is to facilitate finding outlier plans, are
 described below:
 
 +---------------------+-----------+---------------------------------------------------------------+
@@ -328,9 +328,9 @@ described below:
 +=====================+===========+===============================================================+
 | planids             | oid[]     | planids for all plans of the statement                        |
 +---------------------+-----------+---------------------------------------------------------------+
-| calls_histogram     | integer[] | Corresponding calls for each plan                             |
+| calls_per_plan      | integer[] | Corresponding calls for each plan                             |
 +---------------------+-----------+---------------------------------------------------------------+
-| avg_time_historam   | integer[] | Corresponding average time (in milliseconds) for each plan    |
+| avg_time_per_plan   | integer[] | Corresponding average time (in milliseconds) for each plan    |
 +---------------------+-----------+---------------------------------------------------------------+
 | normalized_query    | text      | Query text, normalised with simple regular expression method. |
 +---------------------+-----------+---------------------------------------------------------------+

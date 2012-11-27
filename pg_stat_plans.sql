@@ -88,10 +88,10 @@ CREATE VIEW pg_stat_plans_queries AS
 	dbid,
 	-- XXX: The order of array_agg output is undefined. However, in practice it
 	-- is safe to assume that the order will be consistent across array_agg calls
-	-- in this query, so that plan_ids will correspond to calls_histogram.
+	-- in this query, so that plan_ids will correspond to calls.
 	array_agg(planid) AS plan_ids,
-	array_agg(calls) AS calls_histogram,
-	array_agg(total_time / calls) AS avg_time_histogram,
+	array_agg(calls) AS calls_per_plan,
+	array_agg(total_time / calls) AS avg_time_per_plan,
 	normalize_query(query) AS normalized_query,
 	sum(calls) AS calls,
 	sum(total_time) AS total_time,
