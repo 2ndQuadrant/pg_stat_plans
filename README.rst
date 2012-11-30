@@ -332,11 +332,11 @@ described below:
 +---------------------+-----------+---------------------------------------------------------------+
 | avg_time_per_plan   | integer[] | Corresponding average time (in milliseconds) for each plan    |
 +---------------------+-----------+---------------------------------------------------------------+
-| normalized_query    | text      | Query text, normalised with simple regular expression method. |
+| normalized_query    | text      | Query text, normalized with simple regular expression method  |
 +---------------------+-----------+---------------------------------------------------------------+
-| time_variance       | double    | Variance in average execution times for each plan.            |
+| time_variance       | double    | Variance in average execution times for each plan             |
 +---------------------+-----------+---------------------------------------------------------------+
-| time_stddev         | double    | Stddev of average execution times for each plan.              |
+| time_stddev         | double    | Stddev of average execution times for each plan               |
 +---------------------+-----------+---------------------------------------------------------------+
 
 Note that because ``pg_stat_plans_queries`` is defined in terms of
