@@ -14,19 +14,19 @@ DATA         = $(EXTENSION).sql uninstall_$(EXTENSION).sql
 REGRESS      = $(EXTENSION)
 pgext_files   := $(DOCS) $(DATA)
 
-# we need to build with Extension support:
+# Needed for building with extension support:
 ifeq ($(BUILD_EXTENSION),yes)
 all: $(EXTENSION)--$(EXTVERSION).sql $(EXTENSION)--unpackaged--$(EXTVERSION).sql
 
-# this copy the extension.sql to extension--version.sql
+# Copy extension.sql to extension--version.sql:
 $(EXTENSION)--$(EXTVERSION).sql: $(EXTENSION).sql
 			cp $< $@
 
-# this build the extension--unpackaged--version.sql from uninstall_extension.sql
+# Builds extension--unpackaged--version.sql from uninstall_extension.sql:
 $(EXTENSION)--unpackaged--$(EXTVERSION).sql: uninstall_$(EXTENSION).sql
 			sed 's/DROP /ALTER EXTENSION $(EXTENSION) ADD /' $< > $@
 
-# this build extension.control from extension.control.in
+# Builds extension.control from extension.control.in
 $(EXTENSION).control: $(EXTENSION).control.in
 			sed 's/EXTVERSION/$(EXTVERSION)/;s/EXTENSION/$(EXTENSION)/;s/EXTCOMMENT/$(EXTCOMMENT)/' $< > $@
 
@@ -36,7 +36,7 @@ EXTRA_CLEAN = $(DATA) $(EXTENSION).control
 pgext_files  := $(DOCS)
 endif
 
-# Workaround for lack of good VPATH support in pgxs for extension/contrib
+# Workaround for the lack of good VPATH support in PGXS for extension/contrib:
 ifdef VPATH
 pgext_files_build:= $(addprefix $(CURDIR)/, $(pgext_files))
 pgext_reg_files  := $(addprefix $(CURDIR)/sql/, $(notdir $(wildcard $(VPATH)/sql/*.sql)))
