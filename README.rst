@@ -40,7 +40,7 @@ pg_stat_plans strives to support as many community-supported major versions of
 Postgres as possible. Currently, the following versions of PostgreSQL are
 supported:
 
-9.0 (see notes on search_path), 9.1, 9.2
+9.0 (see notes on search_path limitation), 9.1, 9.2.
 
 9.3-devel is unsupported, but we strive to build cleanly against it in
 anticipation of supporting it as soon as that's useful.
@@ -71,8 +71,9 @@ Note that just because ``pg_config`` is located in one user's $PATH does not
 necessarily make it so for the root user. A workaround is described below,
 at the end of the Redhat notes.
 
-The pg_stat_plans module must be created in PostgreSQL. See "setting up
-PostgreSQL", below.
+The pg_stat_plans module must be created for each PostgreSQL database from which
+query plan costs will be monitored (for the entire installation). See "setting
+up PostgreSQL", below.
 
 Notes on RedHat Linux, Fedora, and CentOS Builds
 ------------------------------------------------
