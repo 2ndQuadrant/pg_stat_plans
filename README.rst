@@ -146,7 +146,7 @@ on PostgreSQL versions 9.1+, execute the following SQL command::
   mydb=# CREATE EXTENSION pg_stat_plans;
 
 Earlier releases (that lack the extension mechanism - in practice, this is
-limited to version 9.0) must create the extension by executing the SQL script
+limited to version 9.0) must install the module by executing the SQL script
 directly::
 
   psql mydb -f pg_stat_plans.sql
