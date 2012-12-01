@@ -1,6 +1,7 @@
 EXTENSION    = pg_stat_plans
 EXTVERSION   = 1.0
 EXTCOMMENT   = Monitors execution costs of plans
+MODULEDIR    = pg_stat_plans
 
 MODULES      = $(EXTENSION)
 DOCS         = README.rst
