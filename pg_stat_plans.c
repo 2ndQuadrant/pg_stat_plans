@@ -1268,9 +1268,9 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	Oid			encod	= PG_GETARG_OID(3);
 
 	text	   *result = NULL;
+	char	   *lower = NULL;
 	pgspHashKey key;
 	pgspEntry  *entry;
-	char *lower;
 
 	/* Set up key for hashtable search */
 	key.userid = PG_ARGISNULL(1)? GetUserId():userid;
@@ -1339,32 +1339,31 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		/*
 		 * XXX: This is a grotty hack.
 		 *
-		 * pg_stat_plans cannot reasonably descriminate between DECLARE
-		 * CURSOR FETCH plans and any other similar type of optimizable
-		 * statement.  However, since the query string will be given as
-		 * the original DECLARE CURSOR string, an EXPLAIN will succeed
-		 * (though fingerprinting of that EXPLAIN will not be consistent
-		 * with the original, which may be how we got here). We try to
-		 * ignore utility statements in pgsp_ExecutorEnd, but this isn't
-		 * a utility statement (actually, there is a separate utility
-		 * statement, but that's not perceptible on 9.0 anyway, so I'm
-		 * not tempted to do it that way). If EXPLAIN DECLARE CURSOR
-		 * simply broke, it wouldn't be unreasonable to just swallow the
-		 * error and document the problem. However, it doesn't, so we
-		 * are left with no choice but to parse the query string to see
-		 * if it is consistent with being a DECLARE CURSOR statement.
+		 * pg_stat_plans cannot reasonably descriminate between DECLARE CURSOR
+		 * FETCH plans and any other similar type of optimizable statement.
+		 * However, since the query string will be given as the original DECLARE
+		 * CURSOR string, an EXPLAIN will succeed (though fingerprinting of that
+		 * EXPLAIN will never be consistent with the original). We try to ignore
+		 * utility statements in pgsp_ExecutorEnd, but this isn't a utility
+		 * statement (actually, there is a separate utility statement, but
+		 * that's not available on 9.0 anyway, so I'm not tempted to do
+		 * something with that). If EXPLAIN DECLARE CURSOR simply broke, it
+		 * wouldn't be unreasonable to just swallow the error and report that.
+		 * However, it doesn't, so we are left with no choice but to parse the
+		 * query string to see if it is consistent with being a DECLARE CURSOR
+		 * statement.
 		 *
-		 * We cannot very well do anything more than just shrug at this.
-		 * If we attempted to parse the "underlying" optimizable
-		 * statement, we'd fall flat on our faces. For one thing (and I
-		 * dare say that there are more, but this will do), when a
-		 * cursor is declared, the planner knows that startup costs are
-		 * much more important, and behaves accordingly.
+		 * We cannot very well do anything more than just shrug at this.  If we
+		 * attempted to parse the "underlying" optimizable statement, we'd fall
+		 * flat on our faces. For one thing (and I dare say that there are more,
+		 * but this will do), when a cursor is declared, the planner knows that
+		 * startup costs are much more important, and behaves accordingly.
 		 */
 
 		if (lower)
 		{
 			match_cur = sscanf(lower, "declare %*s cursor");
+			/* Take the opportunity to detect explain statements too */
 			match_explain = sscanf(lower, "explain %*s");
 			pfree(lower);
 		}
