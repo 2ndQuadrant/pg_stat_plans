@@ -158,8 +158,8 @@ pg_stat_plans, once installed, creates the following objects (plus a few others
 that are not intended to be used by the user directly).
 
 For security reasons, non-superusers are not allowed to see the text of queries
-executed by other users. They can see the statistics, however, if the view has
-been installed in their database.
+executed by other users. They can see the statistics and the plan's signature
+OID, however, if the view has been installed in their database.
 
 pg_stat_plans view
 ------------------
@@ -175,7 +175,7 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | dbid                | oid              | OID of database in which the plan was executed                      |
 +---------------------+------------------+---------------------------------------------------------------------+
-| planid              | oid              | OID of the plan                                                     |
+| planid              | oid              | OID fingerprint of the plan                                         |
 +---------------------+------------------+---------------------------------------------------------------------+
 | query               | text             | Text of the first statement (up to plans_query_size bytes)          |
 +---------------------+------------------+---------------------------------------------------------------------+
@@ -183,7 +183,7 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | from_our_database   | boolean          | Indicates if the entry originated from the current database         |
 +---------------------+------------------+---------------------------------------------------------------------+
-| query_valid         | boolean          | Indicates if query column text now produces same plan               |
+| query_valid         | boolean          | Indicates if query text now produces same plan                      |
 +---------------------+------------------+---------------------------------------------------------------------+
 | calls               | bigint           | Number of times executed                                            |
 +---------------------+------------------+---------------------------------------------------------------------+
@@ -207,6 +207,10 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | temp_blks_written   | bigint           | Total number of temp blocks writes by the plan                      |
 +---------------------+------------------+---------------------------------------------------------------------+
+| blk_read_time       | double precision | Total time in milliseconds spent reading blocks (where available)   |
++---------------------+------------------+---------------------------------------------------------------------+
+| blk_write_time      | double precision | Total time in milliseconds spent writing blocks (where available)   |
++---------------------+------------------+---------------------------------------------------------------------+
 | last_startup_cost   | double precision | Last plan start-up cost observed for entry                          |
 +---------------------+------------------+---------------------------------------------------------------------+
 | last_total_cost     | double precision | Last plan total cost observed for entry                             |
@@ -216,11 +220,20 @@ The columns (userid, dbid, planid) serve as a unique identifier for each
 entry in the view (assuming consistent use of a single encoding). planid is a
 value derived from hashing the query tree just prior to execution.
 
+had_our_search_path indicates if the entry was originally executed with a
+search_path setting that matches the current search_path. This can be useful for
+diagnosing issues while using pg_stat_plans_explain(). This is not available
+when pg_stat_plans is installed on PostgreSQL 9.0.
+
 query_valid is false if and only if an execution of the pg_stat_plans_explain
 function previously found that explaining the original query text did not
 produce the expected query plan for the entry. During the next execution of
 the plan (at some indefinite point in the future), the query column's contents
 will be replaced by new query text, and will be re-validated.
+
+blk_read_time and blk_write_time are only available on PostgreSQL versions 9.2+,
+where the required core infrastructure became available. Even on these versions,
+the value in each case will be 0 unless track_io_timing is enabled.
 
 pg_stat_plans_reset function
 ----------------------------

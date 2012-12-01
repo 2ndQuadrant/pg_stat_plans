@@ -58,6 +58,8 @@ CREATE FUNCTION pg_stat_plans(
     OUT local_blks_written int8,
     OUT temp_blks_read int8,
     OUT temp_blks_written int8,
+    OUT blk_read_time float8,
+    OUT blk_write_time float8,
     OUT last_startup_cost float8,
     OUT last_total_cost float8
 )
@@ -105,7 +107,9 @@ CREATE VIEW pg_stat_plans_queries AS
 	sum(local_blks_read) AS local_blks_read,
 	sum(local_blks_written) AS local_blks_written,
 	sum(temp_blks_read) AS temp_blks_read,
-	sum(temp_blks_written) AS temp_blks_written
+	sum(temp_blks_written) AS temp_blks_written,
+	sum(blk_read_time) AS blk_read_time,
+	sum(blk_write_time) AS blk_write_time
   FROM pg_stat_plans()
 	GROUP BY
 	1, 2, 6;

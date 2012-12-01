@@ -59,7 +59,7 @@ PG_MODULE_MAGIC;
 #define PGSP_DUMP_FILE	"global/pg_stat_plans.stat"
 
 /* This constant defines the magic number in the stats file header */
-static const uint32 PGSP_FILE_HEADER = 0x20121121;
+static const uint32 PGSP_FILE_HEADER = 0x20121201;
 
 /* XXX: Should USAGE_EXEC reflect execution time and/or buffer usage? */
 #define USAGE_EXEC(duration)	(1.0)
@@ -107,6 +107,10 @@ typedef struct Counters
 	int64		temp_blks_written;	/* # of temp blocks written */
 	double		last_startup_cost;	/* last plan startup cost */
 	double		last_total_cost;	/* last plan total cost */
+#if PG_VERSION_NUM >= 90200
+	double		blk_read_time;	/* time spent reading, in msec */
+	double		blk_write_time; /* time spent writing, in msec */
+#endif
 	double		usage;			/* usage factor */
 } Counters;
 
@@ -1038,6 +1042,10 @@ pgsp_store(const char *query, Oid planId,
 		e->counters.local_blks_written += bufusage->local_blks_written;
 		e->counters.temp_blks_read += bufusage->temp_blks_read;
 		e->counters.temp_blks_written += bufusage->temp_blks_written;
+#if PG_VERSION_NUM >= 90200
+		e->counters.blk_read_time += INSTR_TIME_GET_MILLISEC(bufusage->blk_read_time);
+		e->counters.blk_write_time += INSTR_TIME_GET_MILLISEC(bufusage->blk_write_time);
+#endif
 		/* Store latest costs for this plan */
 		e->counters.last_startup_cost = startup_cost;
 		e->counters.last_total_cost = total_cost;
@@ -1121,7 +1129,7 @@ pg_stat_plans_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define PG_STAT_PLAN_COLS 20
+#define PG_STAT_PLAN_COLS 22
 
 /*
  * Retrieve plan statistics.
@@ -1234,6 +1242,13 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		values[i++] = Int64GetDatumFast(tmp.local_blks_written);
 		values[i++] = Int64GetDatumFast(tmp.temp_blks_read);
 		values[i++] = Int64GetDatumFast(tmp.temp_blks_written);
+#if PG_VERSION_NUM >= 90200
+		values[i++] = Float8GetDatumFast(tmp.blk_read_time);
+		values[i++] = Float8GetDatumFast(tmp.blk_write_time);
+#else
+		nulls[i++] = true;
+		nulls[i++] = true;
+#endif
 		values[i++] = Float8GetDatumFast(tmp.last_startup_cost);
 		values[i++] = Float8GetDatumFast(tmp.last_total_cost);
 
