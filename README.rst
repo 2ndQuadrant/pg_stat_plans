@@ -28,10 +28,13 @@ used with the same version of the server that they're distributed with.
 pg_stat_plans is also intended to support advanced use-cases, including the
 aggregation of statistics by third-party tools. This is why the planid value is
 exposed for each entry (notably, the queryid value in pg_stat_statements is
-*not* exposed). It is possible that a future version of pg_stat_plans will have
-explicit support for querying entries based on criteria like if a certain index
-was used, and the support for machine-readable explain formats (e.g.  JSON,
-YAML) anticipates this.
+*not* exposed).
+
+The pg_find_plans submodule, located in the pg_find_plans subdirectory, is an
+optional, experimental module designed to facilitate answering arbitrary
+questions about tracked query plans, such as "what are the costs for all plans
+instrumented by pg_stat_plans that feature a sequential scan against any of the
+top 5 largest tables in the database?".
 
 Supported PostgreSQL versions
 =============================
