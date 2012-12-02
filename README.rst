@@ -334,7 +334,7 @@ the attendant limitations is used.
 
 Most columns are essentially equivalent to and directly derived from a
 pg_stat_plans column, and as such are not described separately. Some of the
-views' columns, whose broad purpose is to facilitate finding outlier plans, are
+view's columns, whose broad purpose is to facilitate finding outlier plans, are
 described below:
 
 +---------------------+-----------+---------------------------------------------------------------+
@@ -353,11 +353,12 @@ described below:
 | time_stddev         | double    | Stddev of average execution times for each plan               |
 +---------------------+-----------+---------------------------------------------------------------+
 
-Note that because ``pg_stat_plans_queries`` is defined in terms of
-pg_stat_plans, it is possible for one plan to be evicted from the module's
-shared hash table, while another plan associated with the same query remains,
-giving a set of execution costs for the query that are not really representative
-of actual costs since the query was first instrumented.
+Note that because ``pg_stat_plans_queries`` is defined in terms of the
+``pg_stat_plans`` view, it is possible for one plan to be evicted from the
+module's shared hash table, while another plan associated with the same query
+remains, giving a set of execution costs for the query that are not really
+representative of actual costs since the query first appeared (in some form) in
+pg_stat_plans.
 
 Configuration Parameters
 ========================
