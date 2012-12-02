@@ -2,90 +2,90 @@
 -- pg_stat_plans.sql
 --
 
--- Originally from http://blog.ioguix.net/
-CREATE OR REPLACE FUNCTION normalize_query(IN TEXT, OUT TEXT) AS $body$
-  SELECT
+-- Originally from http://blog.ioguix.net
+create or replace function normalize_query(in text, out text) as
+$fun$
+  select
 	regexp_replace(regexp_replace(regexp_replace(regexp_replace(
     regexp_replace(regexp_replace(regexp_replace(regexp_replace(
 
     $1,
 
-    -- Remove extra space, new line and tab caracters by a single space
-    '\s+',                          ' ',           'g'   ),
+    -- Replace all whitespace with a single space
+    $$\s+$$,						' ',			'g'		),
 
     -- Remove string content
-    $$\\'$$,                        '',            'g'   ),
-    $$'[^']*'$$,                    $$?$$,        'g'   ),
-    $$''('')+$$,                    $$?$$,        'g'   ),
+    $$\\'$$,						'',				'g'		),
+    $$'[^']*'$$,					$$?$$,			'g'		),
+    $$''('')+$$,					$$?$$,			'g'		),
 
-    -- Remove NULL parameters
-    '=\s*NULL',                     '=?',          'g'   ),
+    -- Remove null parameters
+    E'=\\s*NULL',					'= ?',			'gi'	),
 
     -- Remove numbers
-    '([^a-z_$-])-?([0-9]+)',        '\1'||'?',     'g'   ),
+    '([^a-z_$-])-?([0-9]+)',		E'\\1'||'?',	'g'		),
 
     -- Remove hexadecimal numbers
-    '([^a-z_$-])0x[0-9a-f]{1,10}',  '\1'||'?',    'g'   ),
+    '([^a-z_$-])0x[0-9a-f]{1,10}',	E'\\1'||'?',	'g'		),
 
-    -- Remove IN values
-    'in\s*\([''0x,\s]*\)',          'in (...)',    'g'   )
-  ;
-$body$
-STRICT IMMUTABLE LANGUAGE SQL;
+    -- Remove in() values, as best we can
+    E'in\\s*\\([''0x,\\s]*\\)',		'in (...)',		'g'		);
+$fun$
+strict immutable language sql;
 
 -- Register functions.
-CREATE FUNCTION pg_stat_plans_reset()
-RETURNS void
-AS '$libdir/pg_stat_plans'
-LANGUAGE C;
+create or replace function pg_stat_plans_reset()
+returns void
+as '$libdir/pg_stat_plans'
+language c;
 
-CREATE FUNCTION pg_stat_plans(
-    OUT userid oid,
-    OUT dbid oid,
-    OUT planid oid,
-    OUT query text,
-    OUT had_our_search_path boolean,
-    OUT from_our_database boolean,
-    OUT query_explainable boolean,
-    OUT calls int8,
-    OUT total_time float8,
-    OUT rows int8,
-    OUT shared_blks_hit int8,
-    OUT shared_blks_read int8,
-    OUT shared_blks_written int8,
-    OUT local_blks_hit int8,
-    OUT local_blks_read int8,
-    OUT local_blks_written int8,
-    OUT temp_blks_read int8,
-    OUT temp_blks_written int8,
-    OUT blk_read_time float8,
-    OUT blk_write_time float8,
-    OUT last_startup_cost float8,
-    OUT last_total_cost float8
+create or replace function pg_stat_plans(
+    out userid oid,
+    out dbid oid,
+    out planid oid,
+    out query text,
+    out had_our_search_path boolean,
+    out from_our_database boolean,
+    out query_explainable boolean,
+    out calls int8,
+    out total_time float8,
+    out rows int8,
+    out shared_blks_hit int8,
+    out shared_blks_read int8,
+    out shared_blks_written int8,
+    out local_blks_hit int8,
+    out local_blks_read int8,
+    out local_blks_written int8,
+    out temp_blks_read int8,
+    out temp_blks_written int8,
+    out blk_read_time float8,
+    out blk_write_time float8,
+    out last_startup_cost float8,
+    out last_total_cost float8
 )
-RETURNS SETOF record
-AS '$libdir/pg_stat_plans'
-LANGUAGE C COST 1000;
+returns setof record
+as '$libdir/pg_stat_plans'
+language c cost 1000;
 
-CREATE FUNCTION pg_stat_plans_explain(planid oid,
-							userid oid default NULL,
-							dbid oid default NULL,
-							encodingid oid default NULL)
-RETURNS TEXT
-AS '$libdir/pg_stat_plans'
-LANGUAGE C;
+create or replace function pg_stat_plans_explain(planid oid,
+							userid oid default null,
+							dbid oid default null,
+							encodingid oid default null)
+returns text
+as '$libdir/pg_stat_plans'
+language c;
 
-CREATE FUNCTION pg_stat_plans_pprint(sqltext text)
-RETURNS TEXT
-AS '$libdir/pg_stat_plans'
-STRICT LANGUAGE C;
+create or replace function pg_stat_plans_pprint(sqltext text)
+returns text
+as '$libdir/pg_stat_plans'
+strict language c;
 
 -- Register a view on the function for ease of use.
-CREATE VIEW pg_stat_plans AS
-  SELECT * FROM pg_stat_plans();
+create view pg_stat_plans as
+  select * from pg_stat_plans();
 
-CREATE VIEW pg_stat_plans_queries AS
-  SELECT
+create view pg_stat_plans_queries as
+  select
 	userid,
 	dbid,
 	-- XXX: The order of array_agg output is undefined. However, in practice it
@@ -110,13 +110,13 @@ CREATE VIEW pg_stat_plans_queries AS
 	sum(temp_blks_written) AS temp_blks_written,
 	sum(blk_read_time) AS blk_read_time,
 	sum(blk_write_time) AS blk_write_time
-  FROM pg_stat_plans()
-	GROUP BY
+  from pg_stat_plans()
+	group by
 	1, 2, 6;
 
-GRANT SELECT ON pg_stat_plans TO PUBLIC;
-GRANT SELECT ON pg_stat_plans_queries TO PUBLIC;
+grant select on pg_stat_plans to public;
+grant select on pg_stat_plans_queries to public;
 
 -- Don't want these to be available to non-superusers.
-REVOKE ALL ON FUNCTION pg_stat_plans_reset() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pg_stat_plans_pprint(text) FROM PUBLIC;
+revoke all on function pg_stat_plans_reset() from public;
+revoke all on function pg_stat_plans_pprint(text) from public;

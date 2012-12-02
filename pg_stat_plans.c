@@ -1310,8 +1310,11 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 	/* Get a lower-case copy of the query string while we can. */
 	if (entry)
-		lower = str_tolower(entry->query, entry->query_len,
-							C_COLLATION_OID);
+		lower = str_tolower(entry->query, entry->query_len
+#if PG_VERSION_NUM >= 90100
+							,C_COLLATION_OID
+#endif
+						   );
 
 	if (entry && entry->query_flags & (PGSP_PREPARED | PGSP_UTILITY |
 									   PGSP_TRUNCATED))
