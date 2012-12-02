@@ -1,9 +1,9 @@
 drop function trim_stored_plans();
 drop function materialize_plans(boolean);
 drop function join_count(text, join_type);
-drop function contains_setop(text, setop_strategy_type, regclass);
-drop function contains_aggregate(text, aggregate_strategy_type, regclass);
-drop function contains_modifytable(text, modifytable_op_type, regclass);
+drop function contains_setop(text, setop_strategy, regclass);
+drop function contains_aggregate(text, agg_strategy, regclass);
+drop function contains_modifytable(text, command_type, regclass);
 drop function contains_nodes(text, node_type, regclass[]);
 drop function contains_node(text, node_type, regclass);
 drop type join_type;
