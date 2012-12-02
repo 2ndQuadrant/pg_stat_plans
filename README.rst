@@ -2,7 +2,7 @@
 pg_stat_plans: pg_stat_statements variant that differentiates between query plans.
 ==================================================================================
 
-Version: 1.0 beta 2
+Version: 1.0 beta 3
 
 Author: Peter Geoghegan
 
