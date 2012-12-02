@@ -183,7 +183,7 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | from_our_database   | boolean          | Indicates if the entry originated from the current database         |
 +---------------------+------------------+---------------------------------------------------------------------+
-| query_valid         | boolean          | Indicates if query text now produces same plan                      |
+| query_explainable   | boolean          | Indicates if query text was found to be explainable                 |
 +---------------------+------------------+---------------------------------------------------------------------+
 | calls               | bigint           | Number of times executed                                            |
 +---------------------+------------------+---------------------------------------------------------------------+
@@ -225,11 +225,14 @@ search_path setting that matches the current search_path. This can be useful for
 diagnosing issues while using pg_stat_plans_explain(). This is not available
 when pg_stat_plans is installed on PostgreSQL 9.0.
 
-query_valid is false if and only if an execution of the pg_stat_plans_explain
+query_explainable will be false if an execution of the pg_stat_plans_explain
 function previously found that explaining the original query text did not
-produce the expected query plan for the entry. During the next execution of
-the plan (at some indefinite point in the future), the query column's contents
-will be replaced by new query text, and will be re-validated.
+produce the expected query plan for the entry. During the next execution of the
+plan (at some indefinite point in the future), the query column's contents will
+be replaced by new query text, and will be re-validated - if that was the only
+reason for the query text to not be explainable, the entry will become
+explainable again. The query text of the entry may also not be explainable due
+to some inherent problem, as with prepared queries.
 
 blk_read_time and blk_write_time are only available on PostgreSQL versions 9.2+,
 where the required core infrastructure became available. Even on these versions,
@@ -277,7 +280,7 @@ Usage example::
 
   postgres=# select pg_stat_plans_explain(planid, userid, dbid),
       planid, last_startup_cost, last_total_cost from pg_stat_plans
-      where from_our_database and planid = 2721250187;
+      where query_explainable and from_our_database and planid = 2721250187;
   -[ RECORD 1 ]---------+--------------------------------------------------
   pg_stat_plans_explain | Result  (cost=0.00..0.01 rows=1 width=0)
   planid                | 2721250187
@@ -288,8 +291,10 @@ Internally, the function simply executes an ``EXPLAIN`` (*not* an ``EXPLAIN
 ANALYZE``) based on the known query text.
 
 If the known query text now produces a plan that is not the same as the entry's
-actual plan, the query text is automatically *invalidated*. Its ``query_valid``
-column within pg_stat_plans will subsequently have a value of ``false``.
+actual plan, the query text is automatically *invalidated*. Its
+``query_explainable`` column within pg_stat_plans will subsequently have a value
+of ``false`` (the query text may also be known to be not explainable for other
+reasons, such as being a prepared statement).
 
 The invalid query string is automatically replaced by a now-valid string for the
 plan at the next opportunity (i.e. if and when the original plan is once again
