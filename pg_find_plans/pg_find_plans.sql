@@ -333,7 +333,6 @@ create function contains_aggregate(json_plan text, strategy agg_strategy)
 	AS
 $fun$
 import json
-import re
 
 if strategy is None:
 	plpy.error('No strategy specified')
@@ -370,7 +369,6 @@ create function contains_setop(json_plan text, strategy setop_strategy)
 	AS
 $fun$
 import json
-import re
 
 if strategy is None:
 	plpy.error('No strategy specified')
