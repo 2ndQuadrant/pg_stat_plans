@@ -300,7 +300,7 @@ join_count function
 join_count returns the number of joins within a JSON-format explain text. Its
 signature is::
 
-  join_count(json_plan text, count_type join_type default null)
+  join_count(json_plan text, count join_type default null)
     returns integer
 
 The count_type argument limits joins counted to one of several types of join.
