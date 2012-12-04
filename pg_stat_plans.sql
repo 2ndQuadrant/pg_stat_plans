@@ -1,6 +1,12 @@
---
+-- -----------------------------------------------------------------------------
 -- pg_stat_plans.sql
 --
+--    Install pg_stat_plans extension module.
+--
+--	Copyright (c) 2012, 2ndQuadrant Ltd.
+--
+--
+-- -----------------------------------------------------------------------------
 
 -- Originally from http://blog.ioguix.net
 create or replace function normalize_query(in text, out text) as

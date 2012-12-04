@@ -1,3 +1,13 @@
+-- -----------------------------------------------------------------------------
+-- uninstall_pg_find_plans.sql
+--
+--    Uninstall pg_find_plans extension module.
+--
+--	Copyright (c) 2012, 2ndQuadrant Ltd.
+--
+--
+-- -----------------------------------------------------------------------------
+
 drop function trim_stored_plans();
 drop function materialize_plans(boolean);
 drop function join_count(text, join_type);

@@ -1,3 +1,13 @@
+-- -----------------------------------------------------------------------------
+-- uninstall_pg_stat_plans.sql
+--
+--    Uninstall pg_stat_plans extension module.
+--
+--	Copyright (c) 2012, 2ndQuadrant Ltd.
+--
+--
+-- -----------------------------------------------------------------------------
+
 -- This must be ordered to respect object dependencies.
 DROP VIEW pg_stat_plans;
 DROP VIEW pg_stat_plans_queries;
