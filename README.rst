@@ -373,6 +373,9 @@ Configuration Parameters
 
 pg_stat_plans adds the following configuration parameters:
 
+Note: If you want to configure any of these in Postgres versions prior to 9.2 you need
+to add ``pg_stat_plans`` to the list of `custom_variable_classes <http://www.postgresql.org/docs/9.1/static/runtime-config-custom.html>`_.
+
 ``pg_stat_plans.max (integer)``
 -------------------------------
 pg_stat_plans.max is the maximum number of plans tracked by the module (i.e.,
