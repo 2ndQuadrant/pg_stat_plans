@@ -1220,10 +1220,10 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		/* Does this entry come from our database? */
 		values[i++] = BoolGetDatum(MyDatabaseId == entry->key.dbid);
 		/* Is query text explainable? */
-		values[i++] = BoolGetDatum(entry->query_flags & (PGSP_VALID |
-														 PGSP_PREPARED |
-														 PGSP_TRUNCATED |
-														 PGSP_UTILITY));
+		values[i++] = BoolGetDatum(entry->query_flags & PGSP_VALID &&
+								   !(entry->query_flags & (PGSP_PREPARED |
+															PGSP_TRUNCATED |
+															PGSP_UTILITY)));
 
 		/* copy counters to a local variable to keep locking time short */
 		{
