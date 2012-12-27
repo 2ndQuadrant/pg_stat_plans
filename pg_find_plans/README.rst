@@ -42,7 +42,7 @@ against ``mytable``, and have more than 2 joins?". That might be written as::
   from
     pg_stat_plans p
     join
-    stored_plans sp on (p.userid=sp.userid and p.dbid=sp.dbid and p.planid=sp.planid)
+    stored_plans sp on (p.planid=sp.planid and p.userid=sp.userid and p.dbid=sp.dbid)
   where
     from_our_database
   and
@@ -54,7 +54,7 @@ against ``mytable``, and have more than 2 joins?". That might be written as::
 
 Users should have a high degree of confidence that their queries on plan's
 structure are free of detectable errors, and pg_find_plans ensures this by
-carefully sanitising user input. For example, if the node of interest was
+carefully sanitizing user input. For example, if the node of interest was
 specified as 'seq scan' above, the query would raise an error - to do any less
 might result in a false sense of security about the actual costs of plans that
 sequentially scan the table ``mytable``, since the implementation might then
@@ -77,7 +77,7 @@ Sample queries are available from the file samples.sql, which is distributed
 with pg_find_plans in a subdirectory of pg_stat_plans. These give usage examples
 that are likely to answer questions interesting to DBAs running production
 PostgreSQL systems, including showing costs for plans involving particular
-tables or indexes, or showing plan costs organised by the number of joins
+tables or indexes, or showing plan costs organized by the number of joins
 involved in a query.
 
 Installation
@@ -177,15 +177,15 @@ materialized to. Its definition is::
 
         Column       |       Type       | Modifiers
   -------------------+------------------+-----------
+   planid            | oid              | not null
    userid            | oid              | not null
    dbid              | oid              | not null
-   planid            | oid              | not null
    json_plan         | text             |
    last_startup_cost | double precision | not null
    last_total_cost   | double precision | not null
    error_seen        | text             |
   Indexes:
-      "stored_plans_pkey" PRIMARY KEY, btree (userid, dbid, planid)
+      "stored_plans_pkey" PRIMARY KEY, btree (planid, userid, dbid)
 
 contains_node function
 ----------------------

@@ -167,7 +167,7 @@ OID, however, if the view has been installed in their database.
 pg_stat_plans view
 ------------------
 
-Summarises execution costs of each plan executed. Each entry represents a
+Summarizes execution costs of each plan executed. Each entry represents a
 discrete plan. Each distinct query may have multiple entries (one for each
 plan executed).
 
@@ -277,7 +277,7 @@ pg_stat_plans view. It is possible to omit all but the planid argument - the
 default argument of NULL for userid, dbid and encodingid is interpreted by
 pg_stat_plans as the current value in each case, whatever that may be (that is,
 the current connection's user and database identifiers, and the backend
-encoding).
+encoding identifier).
 
 Usage example::
 
@@ -336,7 +336,7 @@ separately below, under "Limitations".
 pg_stat_plans_queries view
 --------------------------
 
-A variant of the regular pg_stat_plans view that summarises the statistics at
+A variant of the regular pg_stat_plans view that summarizes the statistics at
 the query granularity. Regular expression query text normalization, with all of
 the attendant limitations is used.
 
@@ -496,7 +496,7 @@ case f when 0 then 0 else bar(f -1) end"), but in actuality everything has the
 right query text. The plan with a single call just isn't the plan it appears to
 be at first.
 
-On 9.1, however, the behaviour of pg_stat_plans here happens to be more
+On 9.1, however, the behavior of pg_stat_plans here happens to be more
 intuitive. That is, as would be the case with 9.2's pg_stat_statements, the
 top-level query forms one entry, and all recursive queries another, since the
 recursive queries always use the same generic plan on that version.

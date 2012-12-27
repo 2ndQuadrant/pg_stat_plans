@@ -10,14 +10,14 @@
 
 create table stored_plans
 (
+	planid oid,
 	userid oid,
 	dbid oid,
-	planid oid,
 	json_plan text,
 	last_startup_cost double precision not null,
 	last_total_cost double precision not null,
 	error_seen text,
-	primary key(userid, dbid, planid)
+	primary key(planid, userid, dbid)
 );
 comment on table stored_plans is
 'Table that plans are materialized to by pg_find_plans';
@@ -466,16 +466,16 @@ begin
 	-- We may also have to update existing records iff their costs have changed
 	-- since last time and caller doesn't want to @ignore_costs.
 	<<plan_upserter_loop>>
-	for cur in select userid, dbid, planid, last_startup_cost, last_total_cost
+	for cur in select planid, userid, dbid, last_startup_cost, last_total_cost
 		from pg_stat_plans psp
 		where
 		query_explainable -- deliberately omitted in count(*) query above
 		and
 		from_our_database
 		and not exists(select 1 from @extschema@.stored_plans p where
+					psp.planid = p.planid and
 					psp.userid = p.userid and
 					psp.dbid = p.dbid and
-					psp.planid = p.planid and
 					-- If there is no plan stored, keep trying (in successive
 					-- calls to this function) until there is.  This could be
 					-- futile for some entries, if for example the plan relates
@@ -537,18 +537,18 @@ begin
 
 				insert into @extschema@.stored_plans
 										(
+											planid,
 											userid,
 											dbid,
-											planid,
 											last_startup_cost,
 											last_total_cost,
 											json_plan,
 											error_seen
 										)
 										select
+											cur.planid,
 											cur.userid,
 											cur.dbid,
-											cur.planid,
 											cur.last_startup_cost,
 											cur.last_total_cost,
 											plan,
@@ -563,11 +563,11 @@ begin
 							last_total_cost = cur.last_total_cost,
 							error_seen = errm
 							where
+								planid = cur.planid
+							and
 								userid = cur.userid
 							and
-								dbid = cur.dbid
-							and
-								planid = cur.planid;
+								dbid = cur.dbid;
 			end upsert_plan;
 	end loop plan_upserter_loop;
 
@@ -601,7 +601,7 @@ $fun$
 delete from @extschema@.stored_plans sp
 where
 not exists(select 1 from pg_stat_plans p where
-					sp.userid = p.userid and sp.dbid = p.dbid and sp.planid = p.planid);
+					 sp.planid = p.planid and sp.userid = p.userid and sp.dbid = p.dbid);
 $fun$
 language sql
 volatile;
