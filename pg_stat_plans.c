@@ -59,7 +59,7 @@ PG_MODULE_MAGIC;
 #define PGSP_DUMP_FILE	"global/pg_stat_plans.stat"
 
 /* This constant defines the magic number in the stats file header */
-static const uint32 PGSP_FILE_HEADER = 0x20121201;
+static const uint32 PGSP_FILE_HEADER = 0x20121227;
 
 /* XXX: Should USAGE_EXEC reflect execution time and/or buffer usage? */
 #define USAGE_EXEC(duration)	(1.0)
@@ -83,10 +83,10 @@ static const uint32 PGSP_FILE_HEADER = 0x20121201;
  */
 typedef struct pgspHashKey
 {
+	Oid			planid;			/* plan "OID" */
 	Oid			userid;			/* user OID */
 	Oid			dbid;			/* database OID */
 	int			encoding;		/* query encoding */
-	Oid			planid;			/* plan "OID" */
 } pgspHashKey;
 
 /*
@@ -974,10 +974,10 @@ pgsp_store(const char *query, Oid planId,
 		return;
 
 	/* Set up key for hashtable search */
+	key.planid = planId;
 	key.userid = GetUserId();
 	key.dbid = MyDatabaseId;
 	key.encoding = GetDatabaseEncoding();
-	key.planid = planId;
 
 	/* Lookup the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
@@ -1190,9 +1190,9 @@ pg_stat_plans(PG_FUNCTION_ARGS)
 		memset(values, 0, sizeof(values));
 		memset(nulls, 0, sizeof(nulls));
 
+		values[i++] = ObjectIdGetDatum(entry->key.planid);
 		values[i++] = ObjectIdGetDatum(entry->key.userid);
 		values[i++] = ObjectIdGetDatum(entry->key.dbid);
-		values[i++] = ObjectIdGetDatum(entry->key.planid);
 
 		if (is_superuser || entry->key.userid == userid)
 		{
@@ -1291,10 +1291,10 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 	pgspEntry  *entry;
 
 	/* Set up key for hashtable search */
+	key.planid = planid;
 	key.userid = PG_ARGISNULL(1)? GetUserId():userid;
 	key.dbid = PG_ARGISNULL(2)? MyDatabaseId:dbid;
 	key.encoding = PG_ARGISNULL(3)? GetDatabaseEncoding():encod;
-	key.planid = planid;
 
 	if (key.dbid != MyDatabaseId)
 		ereport(ERROR,

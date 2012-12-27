@@ -46,9 +46,9 @@ as '$libdir/pg_stat_plans'
 language c;
 
 create or replace function pg_stat_plans(
+    out planid oid,
     out userid oid,
     out dbid oid,
-    out planid oid,
     out query text,
     out had_our_search_path boolean,
     out from_our_database boolean,
@@ -92,12 +92,12 @@ create view pg_stat_plans as
 
 create view pg_stat_plans_queries as
   select
-	userid,
-	dbid,
 	-- XXX: The order of array_agg output is undefined. However, in practice it
 	-- is safe to assume that the order will be consistent across array_agg calls
-	-- in this query, so that plan_ids will correspond to calls_per_plan.
-	array_agg(planid) AS plan_ids,
+	-- in this query, so that planids will correspond to calls_per_plan.
+	array_agg(planid) AS planids,
+	userid,
+	dbid,
 	array_agg(calls) AS calls_per_plan,
 	array_agg(total_time / calls) AS avg_time_per_plan,
 	normalize_query(query) AS normalized_query,
@@ -118,7 +118,7 @@ create view pg_stat_plans_queries as
 	sum(blk_write_time) AS blk_write_time
   from pg_stat_plans()
 	group by
-	1, 2, 6;
+	2, 3, 6;
 
 grant select on pg_stat_plans to public;
 grant select on pg_stat_plans_queries to public;

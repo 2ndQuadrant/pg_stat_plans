@@ -174,11 +174,11 @@ plan executed).
 +---------------------+------------------+---------------------------------------------------------------------+
 | Name                | Type             | Description                                                         |
 +=====================+==================+=====================================================================+
+| planid              | oid              | OID fingerprint of the plan                                         |
++---------------------+------------------+---------------------------------------------------------------------+
 | userid              | oid              | OID of user who executed the plan                                   |
 +---------------------+------------------+---------------------------------------------------------------------+
 | dbid                | oid              | OID of database in which the plan was executed                      |
-+---------------------+------------------+---------------------------------------------------------------------+
-| planid              | oid              | OID fingerprint of the plan                                         |
 +---------------------+------------------+---------------------------------------------------------------------+
 | query               | text             | Text of the first statement (up to plans_query_size bytes)          |
 +---------------------+------------------+---------------------------------------------------------------------+
@@ -219,9 +219,9 @@ plan executed).
 | last_total_cost     | double precision | Last plan total cost observed for entry                             |
 +---------------------+------------------+---------------------------------------------------------------------+
 
-The columns (userid, dbid, planid) serve as a unique identifier for each
-entry in the view (assuming consistent use of a single encoding). planid is a
-value derived from hashing the query tree just prior to execution.
+The columns (planid, userid, dbid) serve as a unique identifier for each entry
+in the view (assuming consistent use of a single encoding). planid is a value
+derived from hashing the query tree just prior to execution.
 
 had_our_search_path indicates if the entry was originally executed with a
 search_path setting that matches the current search_path. This can be useful for
@@ -348,7 +348,7 @@ described below:
 +---------------------+-----------+---------------------------------------------------------------+
 | Name                | Type      | Description                                                   |
 +=====================+===========+===============================================================+
-| plan_ids            | oid[]     | planids for all plans of the statement                        |
+| planids             | oid[]     | planids for all plans of the statement                        |
 +---------------------+-----------+---------------------------------------------------------------+
 | calls_per_plan      | integer[] | Corresponding calls for each plan                             |
 +---------------------+-----------+---------------------------------------------------------------+
