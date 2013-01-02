@@ -92,14 +92,11 @@ create view pg_stat_plans as
 
 create view pg_stat_plans_queries as
   select
-	-- XXX: The order of array_agg output is undefined. However, in practice it
-	-- is safe to assume that the order will be consistent across array_agg calls
-	-- in this query, so that planids will correspond to calls_per_plan.
-	array_agg(planid) AS planids,
+	array_agg(planid order by planid) AS planids,
 	userid,
 	dbid,
-	array_agg(calls) AS calls_per_plan,
-	array_agg(total_time / calls) AS avg_time_per_plan,
+	array_agg(calls order by planid) AS calls_per_plan,
+	array_agg(total_time / calls order by planid) AS avg_time_per_plan,
 	normalize_query(query) AS normalized_query,
 	sum(calls) AS calls,
 	sum(total_time) AS total_time,
