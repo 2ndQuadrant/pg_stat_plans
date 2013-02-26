@@ -573,3 +573,42 @@ fingerprinting logic that produces planids stable across releases. However, it
 is *not* guaranteed that planids will be consistent across versions of
 pg_stat_plans, mostly because it is conceivable that the internal representation
 of plans will be altered in a point-release of Postgres.
+
+Bugs
+====
+
+In the event of an apparent inconsistency in pg_stat_plan's fingerprinting
+logic, there is a well-defined procedure for determining if the problem is with
+that logic, or if it is simply a failure to understand a subtlety of the
+planner. Ultimately, for better or worse, pg_stat_plans works by attributing
+execution costs to plans, and so relies on the end-user understanding why and
+how plans might differ for the same query (see notes above on limitations of
+plan fingerprinting).
+
+If SQL text can reliably be treated as a proxy for a plan (or, more accurately,
+a planid), it is simply a matter of producing a new test. Generalize from the
+existing tests within tests/normalization_integration.py. When the new test
+fails, the test program will automatically produce a diff file of a
+pretty-print of each statements/plans internal representation. From there, it
+may prove necessary to tweak the fingerprinting logic in light of it
+incorrectly considering two logically distinct plans as equivalent, or two
+logically equivalent plans as distinct.
+
+However, this approach isn't always effective, because sometimes SQL text
+cannot reliably reproduce a plan (or planid). For example, when initially
+executed, a given SQL text may produce one planid, while when subsequently
+explained using pg_stat_plans_explain(), that same SQL text may be
+fingerprinted differently/have a different planid when it should not. When this
+happens, the following code can be added to the top of pg_stat_plans.c::
+
+  #define STAT_PLANS_DEBUG
+
+When pg_stat_plans is built, it will now have Postgres pretty-print the plan
+tree to stdout as pg_stat_plans fingerprints plans when their execution
+completes. It will also do so when pg_stat_plans_explain() is executed. This
+ensures that a representation of the plan tree that pg_stat_plans actually
+fingerprinted is produced, rather than a plan tree that is assumed to be the
+same as the one previously fingerprinted.
+
+The resulting output can be manually diffed, which is likely to be invaluable
+in debugging the pg_stat_plans fingerprinting logic.

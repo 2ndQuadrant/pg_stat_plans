@@ -838,6 +838,12 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		if (pgsp_planid_notice)
 			ereport(NOTICE,
 					(errmsg("planid: %u", planId)));
+
+#ifdef STAT_PLANS_DEBUG
+		/* Pretty-print tree */
+		printf("Dumping plan %u after plan_store", planId);
+		pprint(queryDesc->plannedstmt);
+#endif
 	}
 
 	/* ...xor explain a query */
@@ -860,6 +866,12 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		MemoryContextSwitchTo(mct);
 
 		pgsp_explaining = PGSP_NO_EXPLAIN;
+
+#ifdef STAT_PLANS_DEBUG
+		/* Pretty-print tree */
+		printf("Dumping plan %u after explaining", pgsp_planid);
+		pprint(queryDesc->plannedstmt);
+#endif
 	}
 
 	if (prev_ExecutorEnd)
