@@ -6,8 +6,6 @@ Version: 1.0
 
 Author: Peter Geoghegan
 
-        peter@2ndquadrant.com
-
 Based on an idea by Peter Geoghegan and Simon Riggs.
 
 Introduction
