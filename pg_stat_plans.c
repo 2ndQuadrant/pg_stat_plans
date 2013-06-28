@@ -254,13 +254,15 @@ static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 #if PG_VERSION_NUM >= 90100
 static void pgsp_ProcessUtility(Node *parsetree, const char *queryString,
-					ParamListInfo params,
+#if PG_VERSION_NUM >= 90300
+								ProcessUtilityContext context,
+#endif
+								ParamListInfo params,
 #if PG_VERSION_NUM < 90300
-					bool isTopLevel, DestReceiver *dest,
-					char *completionTag
+								bool isTopLevel, DestReceiver *dest,
+								char *completionTag
 #else
-					DestReceiver *dest, char *completionTag,
-					ProcessUtilityContext context
+								DestReceiver *dest, char *completionTag
 #endif
 				   );
 #endif
@@ -894,13 +896,15 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 #if PG_VERSION_NUM >= 90100
 static void
 pgsp_ProcessUtility(Node *parsetree, const char *queryString,
+#if PG_VERSION_NUM >= 90300
+					ProcessUtilityContext context,
+#endif
 					ParamListInfo params,
 #if PG_VERSION_NUM < 90300
 					bool isTopLevel, DestReceiver *dest,
 					char *completionTag
 #else
-					DestReceiver *dest, char *completionTag,
-					ProcessUtilityContext context
+					DestReceiver *dest, char *completionTag
 #endif
 				   )
 {
@@ -913,11 +917,11 @@ pgsp_ProcessUtility(Node *parsetree, const char *queryString,
 								isTopLevel, dest, completionTag);
 #else
 	if (prev_ProcessUtility)
-		prev_ProcessUtility(parsetree, queryString, params,
-							dest, completionTag, context);
+		prev_ProcessUtility(parsetree, queryString, context, params,
+							dest, completionTag);
 	else
-		standard_ProcessUtility(parsetree, queryString, params,
-								dest, completionTag, context);
+		standard_ProcessUtility(parsetree, queryString, context, params,
+								dest, completionTag);
 #endif
 
 	if (IsA(parsetree, VariableSetStmt))
