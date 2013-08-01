@@ -1608,7 +1608,7 @@ static Oid
 get_search_path_xor(void)
 {
 	bool		 skip_first = true;
-	List		*search_path = fetch_search_path(false);
+	List		*search_path = fetch_search_path(true);
 	Oid			 res = linitial_oid(search_path);
 	ListCell	*lc;
 
