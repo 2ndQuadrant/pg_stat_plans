@@ -3,7 +3,7 @@
 --
 --    Install pg_stat_plans extension module.
 --
---	Copyright (c) 2012, 2ndQuadrant Ltd.
+--	Copyright (c) 2013, 2ndQuadrant Ltd.
 --
 --
 -- -----------------------------------------------------------------------------

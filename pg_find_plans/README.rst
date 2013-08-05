@@ -6,8 +6,6 @@ Version: 1.0
 
 Author: Peter Geoghegan
 
-        peter@2ndquadrant.com
-
 Introduction
 ============
 
