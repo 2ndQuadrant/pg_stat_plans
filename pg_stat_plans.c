@@ -36,7 +36,6 @@
 #include "access/hash.h"
 #include "executor/instrument.h"
 #include "catalog/namespace.h"
-#include "catalog/pg_collation.h"
 #include "commands/explain.h"
 #include "executor/spi.h"
 #include "funcapi.h"
@@ -52,6 +51,9 @@
 #include "utils/formatting.h"
 #include "utils/memutils.h"
 
+#if PG_VERSION_NUM >= 90100
+#include "catalog/pg_collation.h"
+#endif
 
 PG_MODULE_MAGIC;
 
