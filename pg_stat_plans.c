@@ -168,6 +168,13 @@ static int	nested_level = 0;
 static char *explain_text = NULL;
 /* whether currently explaining query */
 static PGSPExplainLevel pgsp_explaining = PGSP_NO_EXPLAIN;
+/*
+ * Certain queries will result in multiple plans at the same execution level
+ * (multiple invocations of the executor hooks). To differentiate these plans
+ * when explaining, we temporarily store the query (along with "EXPLAIN...")
+ * here. This is a little grotty, but apparently unavoidable.
+ */
+static char* explain_sql_text = NULL;
 #if PG_VERSION_NUM >= 90100
 /* current XOR'd search_path representation for backend */
 static Oid search_path_xor = 0;
@@ -724,7 +731,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	else
 		standard_ExecutorStart(queryDesc, eflags);
 
-	if (pgsp_enabled() || pgsp_explaining)
+	if (pgsp_enabled() || (pgsp_explaining && nested_level == 1))
 	{
 		/*
 		 * Set up to track total elapsed time in ExecutorRun.  Make sure the
@@ -799,7 +806,8 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 	Oid planId = 0;
 
 	/* Setup common to cost aggregation and explain cases */
-	if (queryDesc->totaltime && (pgsp_enabled() || pgsp_explaining))
+	if (queryDesc->totaltime &&
+		(pgsp_enabled() || (pgsp_explaining && nested_level == 1)))
 	{
 		pgspJumbleState	jstate;
 		/* Set up workspace for plan jumbling */
@@ -818,7 +826,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 	}
 
 	/* Aggregate costs... */
-	if (queryDesc->totaltime && pgsp_enabled())
+	if (!pgsp_explaining && queryDesc->totaltime && pgsp_enabled())
 	{
 		bool is_utility = (queryDesc->operation == CMD_UTILITY ||
 						   queryDesc->plannedstmt->utilityStmt != NULL);
@@ -848,8 +856,11 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 #endif
 	}
 
-	/* ...xor explain a query */
-	if (pgsp_explaining)
+
+	/* ...xor explaining a query */
+	else if (pgsp_explaining && nested_level == 1 &&
+			 (explain_sql_text &&
+			 strcmp(explain_sql_text, queryDesc->sourceText) == 0))
 	{
 		/*
 		 * Save explain text or string representation of plan tree to a cstring
@@ -1369,8 +1380,17 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
-		/* Rely on the assumption that this will be NULL-terminated for us: */
-		appendBinaryStringInfo(&query, entry->query, entry->query_len);
+		if (!explain_sql_text)
+		{
+			/*
+			 * Rely on this being NULL-terminated for us:
+			 */
+			appendBinaryStringInfo(&query, entry->query, entry->query_len);
+			/* Store query string */
+			explain_sql_text = palloc(query.len + 1);
+			strcpy(explain_sql_text, query.data);
+		}
+
 		LWLockRelease(pgsp->lock);
 
 		/*
@@ -1456,6 +1476,8 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		if (done)
 			PG_RETURN_NULL();
+
+		explain_sql_text = NULL;
 
 		if (explain_text)
 		{
@@ -1545,7 +1567,6 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		else /* No explain text set */
 		{
 			/* This is just defensive - control should never reach here */
-			LWLockRelease(pgsp->lock);
 			elog(ERROR, "EXPLAIN text wasn't set by pg_stat_plans_explain.");
 		}
 	}
@@ -1668,6 +1689,12 @@ pg_stat_plans_pprint(PG_FUNCTION_ARGS)
 	SPI_finish();
 
 	pgsp_explaining = PGSP_NO_EXPLAIN;
+
+	if (!explain_text)
+	{
+		/* This can sometimes happen due to recursive invocation */
+		PG_RETURN_NULL();
+	}
 
 	f = pretty_format_node_dump(explain_text);
 	pretty_format_node_dump(f);
