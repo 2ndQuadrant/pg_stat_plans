@@ -1,3 +1,9 @@
+pgstatplans (1.1) UNRELEASED; urgency=low
+
+  * Fix Makefile and debian packaging
+
+ -- Cédric Villemain <cedric@villemain.org>  Mon, 12 Aug 2013 16:57:49 +0200
+
 pgstatplans (1.0beta2-1) unstable; urgency=low
 
   * Initial packaging

@@ -2,8 +2,8 @@ Source: pgstatplans
 Section: database
 Priority: extra
 Maintainer: Cédric Villemain <cedric@villemain.org>
-Build-Depends: debhelper (>= 7.0.50), postgresql-server-dev-all (>= 118)
-Standards-Version: 3.9.2
+Build-Depends: debhelper (>= 8.9.0), postgresql-server-dev-all (>= 118)
+Standards-Version: 3.9.4
 Vcs-Git: git://github.com/2ndQuadrant/pg_stat_plans.git
 Vcs-browser: https://github.com/2ndQuadrant/pg_stat_plans.git
 Homepage: https://github.com/2ndQuadrant/pg_stat_plans
