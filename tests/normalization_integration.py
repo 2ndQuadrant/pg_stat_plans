@@ -173,7 +173,7 @@ def main():
     in some cases at some point in the code's development.
     """
 
-    conn = psycopg2.connect("")
+    conn = psycopg2.connect("host=localhost")
     cur = conn.cursor()
     cur.execute("set pg_stat_plans.track = 'all';")
 
