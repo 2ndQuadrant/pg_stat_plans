@@ -1381,16 +1381,13 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 
 		initStringInfo(&query);
 		appendStringInfo(&query, "EXPLAIN ");
-		if (!explain_sql_text)
-		{
-			/*
-			 * Rely on this being NULL-terminated for us:
-			 */
-			appendBinaryStringInfo(&query, entry->query, entry->query_len);
-			/* Store query string */
-			explain_sql_text = palloc(query.len + 1);
-			strcpy(explain_sql_text, query.data);
-		}
+		/*
+		 * Rely on this being NULL-terminated for us:
+		 */
+		appendBinaryStringInfo(&query, entry->query, entry->query_len);
+		/* Store query string */
+		explain_sql_text = palloc(query.len + 1);
+		strcpy(explain_sql_text, query.data);
 
 		LWLockRelease(pgsp->lock);
 
