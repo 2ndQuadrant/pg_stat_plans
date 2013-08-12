@@ -3,7 +3,7 @@
 --
 --    Sample queries that show idiomatic use of pg_find_plans infrastructure.
 --
---	Copyright (c) 2012, 2ndQuadrant Ltd.
+--	Copyright (c) 2013, 2ndQuadrant Ltd.
 --
 --
 -- -----------------------------------------------------------------------------
