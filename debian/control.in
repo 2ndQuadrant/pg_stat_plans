@@ -12,4 +12,8 @@ Package: postgresql-PGVERSION-pgstatplans
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-PGVERSION
 Description: pg_stat_plans is a variant of the standard Postgres contrib module
- pg_stat_statements.set of PostgreSQL functions to manage blocks in memory
+ pg_stat_statements.  It differentiates between and assigns execution costs to
+ plans, rather than queries.  This makes it particularly suitable for monitoring
+ query planner regressions.  However, it is also suitable as a general-purpose 
+ tool for understanding execution costs at both the plan and query granularity.
+
