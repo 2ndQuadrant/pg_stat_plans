@@ -4,6 +4,10 @@ debian/control
 debian/files
 build-pgstatplans-*
 debian/postgresql-*
+pg_find_plans/debian/control
+pg_find_plans/debian/files
+pg_find_plans/build-pgfindplans-*
+pg_find_plans/debian/postgresql-*
 results/
 *.so
 *.pyc

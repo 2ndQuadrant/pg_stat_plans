@@ -1,0 +1,21 @@
+Source: pgfindplans
+Section: database
+Priority: extra
+Maintainer: Cédric Villemain <cedric@villemain.org>
+Build-Depends: debhelper (>= 8.9.0), postgresql-server-dev-all (>= 118)
+Standards-Version: 3.9.4
+Vcs-Git: git://github.com/2ndQuadrant/pg_stat_plans.git
+Vcs-browser: https://github.com/2ndQuadrant/pg_stat_plans.git
+Homepage: https://github.com/2ndQuadrant/pg_stat_plans
+
+Package: postgresql-PGVERSION-pgfindplans
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-PGVERSION
+Description: pg_find_plans is an experimental submodule of pg_stat_plans.
+ pg_stat_plans is a framework for understanding plan execution costs, that by
+ design exposes some relatively low-level, extensible functionality, to be
+ used as clients see fit - plan costs are simply tracked in a view that the
+ module makes available. Query texts stored by the module can be explained on
+ an ad-hoc basis (the module manages some corner-cases with that), and
+ machine-readable explain texts are made available via a simple function-call
+ API. 
