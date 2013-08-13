@@ -1378,13 +1378,16 @@ pg_stat_plans_explain(PG_FUNCTION_ARGS)
 		int 					match_cur		=	-1;
 		int 					match_explain	=	-1;
 		int						ret;
+		char					*qstr;
 
 		initStringInfo(&query);
-		appendStringInfo(&query, "EXPLAIN ");
-		/*
-		 * Rely on this being NULL-terminated for us:
-		 */
-		appendBinaryStringInfo(&query, entry->query, entry->query_len);
+
+			qstr = (char *)
+				pg_do_encoding_conversion((unsigned char *) entry->query,
+										  entry->query_len,
+										  entry->key.encoding,
+										  GetDatabaseEncoding());
+		appendStringInfo(&query, "EXPLAIN %s", qstr);
 		/* Store query string */
 		explain_sql_text = palloc(query.len + 1);
 		strcpy(explain_sql_text, query.data);
