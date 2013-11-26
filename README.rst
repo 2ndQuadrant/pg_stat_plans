@@ -41,10 +41,8 @@ pg_stat_plans strives to support as many community-supported major versions of
 Postgres as possible. Currently, the following versions of PostgreSQL are
 supported:
 
-9.0 (see notes on search_path limitation), 9.1, 9.2.
+9.0 (see notes on search_path limitation), 9.1, 9.2, 9.3.
 
-9.3-devel is unsupported, but we strive to build cleanly against it in
-anticipation of supporting it as soon as that's useful.
 
 Installation
 ============
