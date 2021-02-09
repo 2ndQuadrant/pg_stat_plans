@@ -1,3 +1,5 @@
+WARNING: This extension is not actively maintained at present.
+
 ==================================================================================
 pg_stat_plans: pg_stat_statements variant that differentiates between query plans.
 ==================================================================================
